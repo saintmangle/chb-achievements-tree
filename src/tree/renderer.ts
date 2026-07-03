@@ -8,13 +8,19 @@ const PIXEL = 3;
 const COLORS = {
   wood: "#4a3222",
   root: "#33241a",
-  leafOff: "#c9c4a0",
-  leafOn: "#57cf7c",
-  leafOnHighlight: "#8af0a8",
-  leafOffHighlight: "#efe9c8",
+  fruitOff: "#f2ebcd",
+  fruitOffOutline: "#3a2a1a",
+  fruitOn: "#57cf7c",
+  fruitOnOutline: "#245c34",
+  fruitOffHighlight: "#fffbe6",
+  fruitOnHighlight: "#8af0a8",
 };
 
-const FOLIAGE_COLORS = ["#35583a", "#3f6b40", "#4c7a49"];
+// The crown starts cream-white; completing an achievement turns its fruit and
+// the foliage around it green, so the tree greens up spot by spot.
+const FOLIAGE_CREAM = ["#a89f80", "#b5ad8e", "#9a9278"];
+const FOLIAGE_GREEN = ["#3f7a45", "#4c8a50", "#377040"];
+const GREEN_RADIUS = 38;
 
 type Rgb = [number, number, number];
 
@@ -121,14 +127,40 @@ function drawLeafCluster(ctx: CanvasRenderingContext2D, leaf: LeafCluster, color
   ctx.fillRect(cellOf(leaf.center.x) * PIXEL, cellOf(leaf.center.y) * PIXEL, PIXEL, PIXEL);
 }
 
-function achievementLeafColor(completed: boolean, highlighted: boolean): string {
-  return completed
+// Achievements are drawn as "fruits": a solid 3×3-cell disc with a dark
+// octagonal outline — a clearly clickable button among the loose foliage.
+const FRUIT_FILL: Array<[number, number]> = [];
+const FRUIT_RING: Array<[number, number]> = [];
+for (let dx = -2; dx <= 2; dx++) {
+  for (let dy = -2; dy <= 2; dy++) {
+    const cheb = Math.max(Math.abs(dx), Math.abs(dy));
+    if (cheb <= 1) FRUIT_FILL.push([dx, dy]);
+    else if (Math.abs(dx) + Math.abs(dy) <= 3) FRUIT_RING.push([dx, dy]);
+  }
+}
+
+function drawFruit(ctx: CanvasRenderingContext2D, center: Point, fill: string, outline: string) {
+  const cx = cellOf(center.x);
+  const cy = cellOf(center.y);
+  ctx.fillStyle = outline;
+  for (const [dx, dy] of FRUIT_RING) {
+    ctx.fillRect((cx + dx) * PIXEL, (cy + dy) * PIXEL, PIXEL, PIXEL);
+  }
+  ctx.fillStyle = fill;
+  for (const [dx, dy] of FRUIT_FILL) {
+    ctx.fillRect((cx + dx) * PIXEL, (cy + dy) * PIXEL, PIXEL, PIXEL);
+  }
+}
+
+function drawAchievementFruit(ctx: CanvasRenderingContext2D, center: Point, completed: boolean, highlighted: boolean) {
+  const fill = completed
     ? highlighted
-      ? COLORS.leafOnHighlight
-      : COLORS.leafOn
+      ? COLORS.fruitOnHighlight
+      : COLORS.fruitOn
     : highlighted
-      ? COLORS.leafOffHighlight
-      : COLORS.leafOff;
+      ? COLORS.fruitOffHighlight
+      : COLORS.fruitOff;
+  drawFruit(ctx, center, fill, completed ? COLORS.fruitOnOutline : COLORS.fruitOffOutline);
 }
 
 /**
@@ -196,30 +228,31 @@ export function renderTree(
 
   for (const root of layout.roots) {
     drawTaperedPath(ctx, root.path, root.baseWidth, root.tipWidth, COLORS.root);
-    drawLeafCluster(
-      ctx,
-      root.leaf,
-      achievementLeafColor(root.status, options.highlightedId === root.customId),
-    );
+    drawAchievementFruit(ctx, root.leaf.center, root.status, options.highlightedId === root.customId);
   }
 
   drawTrunkStripes(ctx, layout);
 
   for (const branch of layout.branches) {
     drawTaperedPath(ctx, branch.path, branch.baseWidth, branch.tipWidth, branchColor(branch.branchId));
+
+    // A foliage cluster turns green when a completed fruit is nearby, so each
+    // checked-off achievement greens its own patch of the crown.
+    const completedCenters = branch.twigs
+      .filter((t) => options.progress[t.achievementId])
+      .map((t) => t.leaf.center);
     branch.foliage.forEach((leaf, i) => {
-      drawLeafCluster(ctx, leaf, FOLIAGE_COLORS[(branch.branchId * 7 + i) % FOLIAGE_COLORS.length]);
+      const green = completedCenters.some((c) => distSq(c, leaf.center) < GREEN_RADIUS * GREEN_RADIUS);
+      const palette = green ? FOLIAGE_GREEN : FOLIAGE_CREAM;
+      drawLeafCluster(ctx, leaf, palette[(branch.branchId * 7 + i) % palette.length]);
     });
+
     for (const twig of branch.twigs) {
       drawPixelLine(ctx, twig.stub[0], twig.stub[1], PIXEL, branchStubColor(branch.branchId));
     }
     for (const twig of branch.twigs) {
       const completed = Boolean(options.progress[twig.achievementId]);
-      drawLeafCluster(
-        ctx,
-        twig.leaf,
-        achievementLeafColor(completed, options.highlightedId === twig.achievementId),
-      );
+      drawAchievementFruit(ctx, twig.leaf.center, completed, options.highlightedId === twig.achievementId);
     }
   }
 

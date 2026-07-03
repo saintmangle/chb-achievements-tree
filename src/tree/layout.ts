@@ -12,10 +12,12 @@ import type {
   TwigLayout,
 } from "./types";
 
-const TRUNK_HEIGHT = 270;
-const TRUNK_SEGMENTS = 27;
-const TRUNK_BASE_WIDTH = 27;
-const TRUNK_TOP_WIDTH = 15;
+// The world is deliberately roomy relative to the 3-unit pixel grid — more
+// spacing between elements means the fat pixels don't pile onto each other.
+const TRUNK_HEIGHT = 360;
+const TRUNK_SEGMENTS = 30;
+const TRUNK_BASE_WIDTH = 33;
+const TRUNK_TOP_WIDTH = 18;
 
 // Branches attach along the trunk and fan out without crossing: on each side
 // the lowest branch grows almost horizontally and every branch above it grows
@@ -24,17 +26,21 @@ const BRANCH_ATTACH_FROM = 0.3;
 const BRANCH_ATTACH_TO = 0.96;
 const BRANCH_ANGLE_FROM = (9 * Math.PI) / 180;
 const BRANCH_ANGLE_TO = (76 * Math.PI) / 180;
-const BRANCH_BASE_LENGTH = 46;
-const BRANCH_LENGTH_PER_TWIG = 9;
-const BRANCH_SEGMENT_LENGTH = 9;
+const BRANCH_BASE_LENGTH = 60;
+const BRANCH_LENGTH_PER_TWIG = 12;
+const BRANCH_SEGMENT_LENGTH = 11;
 const BRANCH_JITTER = 0.18;
 
 // Chained ("сюжетные") achievements grow outward from their parent leaf,
 // one step per link, so a requires-chain reads as one long twig.
-const CHAIN_STEP = 17;
+const CHAIN_STEP = 24;
 const CHAIN_FORK_SPREAD = 0.5;
 
-const ROOT_SEGMENT_LENGTH = 9;
+// Decorative foliage keeps this distance from achievement "fruits" so the
+// clickable spots stay visually clean.
+const FOLIAGE_CLEARANCE = 17;
+
+const ROOT_SEGMENT_LENGTH = 12;
 
 function dist(a: Point, b: Point): number {
   return Math.hypot(b.x - a.x, b.y - a.y);
@@ -124,17 +130,17 @@ function blendAngle(a: number, b: number, k: number): number {
 
 function buildLeafCluster(center: Point, seed: number): LeafCluster {
   const rng = mulberry32(seed);
-  const blockCount = 6 + Math.floor(rng() * 4);
+  const blockCount = 7 + Math.floor(rng() * 5);
   const blocks: Point[] = [];
   for (let i = 0; i < blockCount; i++) {
     const angle = rng() * Math.PI * 2;
-    const radius = rng() * 6;
+    const radius = rng() * 7.5;
     blocks.push({
       x: center.x + Math.cos(angle) * radius,
       y: center.y + Math.sin(angle) * radius,
     });
   }
-  return { center, blocks, radius: 10 };
+  return { center, blocks, radius: 12 };
 }
 
 function buildBranch(
@@ -196,7 +202,7 @@ function buildBranch(
     const t = (i + 1) / (starts.length + 1);
     const { point, normal } = pointAtArcLength(path, t);
     const twigSide = i % 2 === 0 ? 1 : -1;
-    const offset = 10 + (i % 3) * 3;
+    const offset = 13 + (i % 3) * 4;
     const leafCenter: Point = {
       x: point.x + normal.x * offset * twigSide,
       y: point.y + normal.y * offset * twigSide,
@@ -208,12 +214,12 @@ function buildBranch(
   // cap of clusters past the tip.
   const foliage: LeafCluster[] = [];
   const frng = mulberry32(hashString(`foliage:${branch.id}`));
-  const clusterCount = Math.max(6, Math.round(segmentCount * 1.5));
+  const clusterCount = Math.max(10, Math.round(segmentCount * 2.4));
   for (let c = 0; c < clusterCount; c++) {
-    const t = 0.3 + 0.7 * (c / Math.max(1, clusterCount - 1));
+    const t = 0.22 + 0.78 * (c / Math.max(1, clusterCount - 1));
     const { point, normal } = pointAtArcLength(path, t);
     const side = c % 2 === 0 ? 1 : -1;
-    const offset = 6 + frng() * 10;
+    const offset = 6 + frng() * 15;
     foliage.push(
       buildLeafCluster(
         { x: point.x + normal.x * offset * side, y: point.y + normal.y * offset * side },
@@ -222,9 +228,9 @@ function buildBranch(
     );
   }
   const tip = path[path.length - 1];
-  for (let k = 0; k < 3; k++) {
-    const a = dirAngle + (frng() - 0.5) * 0.9;
-    const r = 8 + k * 9;
+  for (let k = 0; k < 5; k++) {
+    const a = dirAngle + (frng() - 0.5) * 1.1;
+    const r = 10 + k * 9;
     foliage.push(
       buildLeafCluster(
         { x: tip.x + Math.cos(a) * r, y: tip.y + Math.sin(a) * r },
@@ -232,15 +238,18 @@ function buildBranch(
       ),
     );
   }
+  const clearedFoliage = foliage.filter((leaf) =>
+    twigs.every((twig) => dist(leaf.center, twig.leaf.center) >= FOLIAGE_CLEARANCE),
+  );
 
   return {
     branchId: branch.id,
     title: branch.title,
     path,
-    baseWidth: 6 + Math.min(6, count * 0.18),
-    tipWidth: 2.5,
+    baseWidth: 8 + Math.min(7, count * 0.2),
+    tipWidth: 3,
     twigs,
-    foliage,
+    foliage: clearedFoliage,
   };
 }
 
@@ -249,7 +258,7 @@ function buildRoot(custom: CustomAchievement, attach: Point, index: number): Roo
   // Fan the personal roots across the down hemisphere, one sector per root.
   const spread = ((index * 0.47) % 2) - 1;
   const dirAngle = Math.PI / 2 + spread * 1.0;
-  const segmentCount = 5 + (hashString(`rootlen:${custom.id}`) % 3);
+  const segmentCount = 6 + (hashString(`rootlen:${custom.id}`) % 3);
   const path = buildWalkPath(attach, dirAngle, segmentCount, ROOT_SEGMENT_LENGTH, seed, 0.25);
   const tip = path[path.length - 1];
 
@@ -258,8 +267,8 @@ function buildRoot(custom: CustomAchievement, attach: Point, index: number): Roo
     text: custom.text,
     status: custom.status,
     path,
-    baseWidth: 5,
-    tipWidth: 2,
+    baseWidth: 6,
+    tipWidth: 2.5,
     leaf: buildLeafCluster(tip, hashString(`rootleaf:${custom.id}`)),
   };
 }
@@ -271,13 +280,13 @@ function buildGroundRoots(base: Point): GroundRootLayout[] {
     path: buildWalkPath(
       base,
       Math.PI / 2 + rel,
-      6 + (i % 2),
+      7 + (i % 2),
       ROOT_SEGMENT_LENGTH,
       hashString(`groundroot:${i}`),
       0.25,
     ),
-    baseWidth: 6,
-    tipWidth: 2,
+    baseWidth: 8,
+    tipWidth: 2.5,
   }));
 }
 
