@@ -1,0 +1,225 @@
+:root {
+  --bg-top: #0c1912;
+  --bg-bottom: #060d09;
+  --text: #d9e4d6;
+  --text-dim: #8fa08a;
+  --panel: #101e15;
+  --panel-border: #24402c;
+  --accent-green: #4fae6b;
+  --accent-green-bright: #6fd98a;
+
+  color-scheme: dark;
+  font: 15px/1.4 ui-monospace, "Courier New", monospace;
+  color: var(--text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: radial-gradient(ellipse at 50% 20%, var(--bg-top), var(--bg-bottom));
+  overflow: hidden;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100svh;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border-bottom: 2px solid var(--panel-border);
+  z-index: 5;
+}
+
+.app-title {
+  font-weight: bold;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+  color: var(--accent-green-bright);
+}
+
+.app-progress {
+  color: var(--text-dim);
+}
+
+.fit-all-btn,
+.add-root-fab,
+.add-root-actions button,
+.tooltip-check {
+  font-family: inherit;
+}
+
+.fit-all-btn {
+  background: var(--panel-border);
+  color: var(--text);
+  border: 1px solid var(--accent-green);
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.fit-all-btn:hover {
+  background: var(--accent-green);
+  color: #06210f;
+}
+
+.tree-wrapper {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.tree-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+}
+
+.tree-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  image-rendering: pixelated;
+}
+
+.status-screen {
+  height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  color: var(--text-dim);
+}
+
+.tooltip-anchor {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.tooltip-card {
+  pointer-events: auto;
+  position: relative;
+  margin-bottom: 14px;
+  background: var(--panel);
+  border: 2px solid var(--accent-green);
+  border-radius: 6px;
+  padding: 10px 12px;
+  width: max-content;
+  max-width: 240px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+
+.tooltip-close {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.tooltip-title {
+  font-weight: bold;
+  margin-bottom: 4px;
+  padding-right: 14px;
+}
+
+.tooltip-description {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.tooltip-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.app-footer {
+  padding: 10px 14px;
+  background: var(--panel);
+  border-top: 2px solid var(--panel-border);
+  z-index: 5;
+}
+
+.add-root-fab {
+  width: 100%;
+  padding: 8px;
+  background: none;
+  border: 1px dashed var(--accent-green);
+  color: var(--accent-green-bright);
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.add-root-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.add-root-form textarea {
+  resize: vertical;
+  min-height: 60px;
+  background: var(--bg-bottom);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  padding: 8px;
+  font-family: inherit;
+}
+
+.add-root-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.add-root-actions button {
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.add-root-actions button[type="submit"] {
+  border-color: var(--accent-green);
+  color: var(--accent-green-bright);
+}
+
+.add-root-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

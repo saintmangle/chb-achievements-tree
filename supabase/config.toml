@@ -1,0 +1,4 @@
+project_id = "akjclyufpvcmanyipumx"
+
+[functions.verify-init-data]
+verify_jwt = false

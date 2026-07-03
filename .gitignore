@@ -1,0 +1,7 @@
+.env
+.env.local
+claude_code_kickoff_prompt.md
+node_modules/
+dist/
+.DS_Store
+.claude/settings.local.json
