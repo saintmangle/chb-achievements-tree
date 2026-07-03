@@ -16,6 +16,8 @@ export interface TwigLayout {
   description: string;
   stub: [Point, Point];
   leaf: LeafCluster;
+  /** For chained achievements: the achievement this one grows out of. */
+  parentAchievementId?: string;
 }
 
 export interface BranchLayout {

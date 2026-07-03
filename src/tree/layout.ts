@@ -34,7 +34,11 @@ const BRANCH_JITTER = 0.18;
 // Chained ("сюжетные") achievements grow outward from their parent leaf,
 // one step per link, so a requires-chain reads as one long twig.
 const CHAIN_STEP = 24;
-const CHAIN_FORK_SPREAD = 0.5;
+const CHAIN_FORK_SPREAD = 0.9;
+
+// Fruits are pushed apart until no two are closer than this (fruit is ~15
+// world units across, so this guarantees a visible gap).
+const MIN_FRUIT_DIST = 18;
 
 // Decorative foliage keeps this distance from achievement "fruits" so the
 // clickable spots stay visually clean.
@@ -174,7 +178,7 @@ function buildBranch(
 
   const twigs: TwigLayout[] = [];
 
-  const placeChain = (achievement: Achievement, from: Point, leafCenter: Point) => {
+  const placeChain = (achievement: Achievement, from: Point, leafCenter: Point, parentId?: string) => {
     twigs.push({
       achievementId: achievement.id,
       branchId: branch.id,
@@ -182,6 +186,7 @@ function buildBranch(
       description: achievement.description,
       stub: [from, leafCenter],
       leaf: buildLeafCluster(leafCenter, hashString(`leaf:${achievement.id}`)),
+      parentAchievementId: parentId,
     });
 
     const children = childrenOf.get(achievement.id) ?? [];
@@ -197,7 +202,7 @@ function buildBranch(
         x: leafCenter.x + Math.cos(angle) * CHAIN_STEP,
         y: leafCenter.y + Math.sin(angle) * CHAIN_STEP,
       };
-      placeChain(child, leafCenter, childLeaf);
+      placeChain(child, leafCenter, childLeaf, achievement.id);
     });
   };
 
@@ -223,7 +228,7 @@ function buildBranch(
     const t = 0.15 + 0.85 * (c / Math.max(1, clusterCount - 1));
     const { point, normal } = pointAtArcLength(path, t);
     const side = c % 2 === 0 ? 1 : -1;
-    const offset = 5 + frng() * 33;
+    const offset = 5 + frng() * 20;
     foliage.push(
       buildLeafCluster(
         { x: point.x + normal.x * offset * side, y: point.y + normal.y * offset * side },
@@ -232,9 +237,9 @@ function buildBranch(
     );
   }
   const tip = path[path.length - 1];
-  for (let k = 0; k < 8; k++) {
-    const a = dirAngle + (frng() - 0.5) * 1.4;
-    const r = 8 + k * 8;
+  for (let k = 0; k < 6; k++) {
+    const a = dirAngle + (frng() - 0.5) * 0.8;
+    const r = 6 + k * 6;
     foliage.push(
       buildLeafCluster(
         { x: tip.x + Math.cos(a) * r, y: tip.y + Math.sin(a) * r },
@@ -277,21 +282,37 @@ function buildRoot(custom: CustomAchievement, attach: Point, index: number): Roo
   };
 }
 
-/** The tree always has a few bare roots, even before any custom achievements exist. */
-function buildGroundRoots(base: Point): GroundRootLayout[] {
-  const angles = [-0.8, -0.35, 0.2, 0.7];
-  return angles.map((rel, i) => ({
-    path: buildWalkPath(
-      base,
-      Math.PI / 2 + rel,
-      7 + (i % 2),
-      ROOT_SEGMENT_LENGTH,
-      hashString(`groundroot:${i}`),
-      0.25,
-    ),
-    baseWidth: 8,
-    tipWidth: 2.5,
-  }));
+/**
+ * The trunk continues underground as a thick taproot and only then splits
+ * into individual roots, so the tree reads as one piece. Custom-achievement
+ * roots also grow from the fork point.
+ */
+function buildGroundRoots(base: Point): { layouts: GroundRootLayout[]; fork: Point } {
+  const taproot: Point[] = [
+    { x: base.x, y: base.y },
+    { x: base.x + 1.5, y: base.y + 14 },
+    { x: base.x - 1, y: base.y + 28 },
+  ];
+  const fork = taproot[taproot.length - 1];
+  const layouts: GroundRootLayout[] = [
+    { path: taproot, baseWidth: TRUNK_BASE_WIDTH * 0.85, tipWidth: 15 },
+  ];
+  const angles = [-0.95, -0.5, 0.05, 0.5, 0.95];
+  angles.forEach((rel, i) => {
+    layouts.push({
+      path: buildWalkPath(
+        fork,
+        Math.PI / 2 + rel,
+        6 + (i % 3),
+        ROOT_SEGMENT_LENGTH,
+        hashString(`groundroot:${i}`),
+        0.25,
+      ),
+      baseWidth: 9,
+      tipWidth: 2.5,
+    });
+  });
+  return { layouts, fork };
 }
 
 function expandBounds(bounds: TreeBounds, p: Point, pad = 0) {
@@ -320,8 +341,18 @@ export function buildTreeLayout(
   // the roots below, not as a regular branch.
   const fixedBranches = branches.filter((b) => (byBranch.get(b.id)?.length ?? 0) > 0);
 
-  const leftSide = fixedBranches.filter((_, i) => i % 2 === 0);
-  const rightSide = fixedBranches.filter((_, i) => i % 2 === 1);
+  // Place big branches low (near-horizontal sectors have the most room) and
+  // small ones high. Only the position changes — ids/numbers stay the same.
+  const weightOf = (b: Branch): number => {
+    const achs = byBranch.get(b.id) ?? [];
+    const ids = new Set(achs.map((a) => a.id));
+    const starts = achs.filter((a) => !a.requires || !ids.has(a.requires)).length;
+    return starts + (achs.length - starts) * 0.6;
+  };
+  const ordered = [...fixedBranches].sort((a, b) => weightOf(b) - weightOf(a));
+
+  const leftSide = ordered.filter((_, i) => i % 2 === 0);
+  const rightSide = ordered.filter((_, i) => i % 2 === 1);
 
   const buildSide = (side: Branch[], isLeft: boolean): BranchLayout[] =>
     side.map((branch, k) => {
@@ -342,10 +373,45 @@ export function buildTreeLayout(
   // the renderer paints stripes across the trunk in this order.
   const branchLayouts: BranchLayout[] = [...buildSide(leftSide, true), ...buildSide(rightSide, false)];
 
+  // No two fruits closer than MIN_FRUIT_DIST: push overlapping pairs apart,
+  // then re-anchor the connector stubs to the settled positions.
+  const allTwigs = branchLayouts.flatMap((b) => b.twigs);
+  for (let iter = 0; iter < 30; iter++) {
+    let anyMoved = false;
+    for (let i = 0; i < allTwigs.length; i++) {
+      for (let j = i + 1; j < allTwigs.length; j++) {
+        const a = allTwigs[i].leaf.center;
+        const b = allTwigs[j].leaf.center;
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let d = Math.hypot(dx, dy);
+        if (d >= MIN_FRUIT_DIST) continue;
+        if (d < 0.01) {
+          dx = 1;
+          dy = 0;
+          d = 1;
+        }
+        const push = (MIN_FRUIT_DIST - d) / 2 / d;
+        a.x -= dx * push;
+        a.y -= dy * push;
+        b.x += dx * push;
+        b.y += dy * push;
+        anyMoved = true;
+      }
+    }
+    if (!anyMoved) break;
+  }
+  const twigById = new Map(allTwigs.map((t) => [t.achievementId, t]));
+  for (const t of allTwigs) {
+    const parent = t.parentAchievementId ? twigById.get(t.parentAchievementId) : undefined;
+    t.stub = [parent ? parent.leaf.center : t.stub[0], t.leaf.center];
+  }
+
+  const ground = buildGroundRoots(trunk.path[0]);
+  const groundRoots = ground.layouts;
   const rootLayouts: RootLayout[] = customAchievements.map((custom, i) =>
-    buildRoot(custom, trunk.path[0], i),
+    buildRoot(custom, ground.fork, i),
   );
-  const groundRoots = buildGroundRoots(trunk.path[0]);
 
   const bounds: TreeBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
   for (const p of trunk.path) expandBounds(bounds, p, TRUNK_BASE_WIDTH);
