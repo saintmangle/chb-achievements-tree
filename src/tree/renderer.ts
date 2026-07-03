@@ -7,7 +7,8 @@ const PIXEL = 3;
 
 const COLORS = {
   wood: "#4a3222",
-  root: "#33241a",
+  // Roots are the same wood as the trunk — the tree reads as one piece.
+  root: "#4a3222",
   fruitOff: "#f2ebcd",
   fruitOffOutline: "#3a2a1a",
   fruitOn: "#57cf7c",
@@ -182,8 +183,20 @@ function drawTrunkStripes(ctx: CanvasRenderingContext2D, layout: TreeLayout) {
     return lerpRgb(stripeColors[i], stripeColors[i + 1], pos - i);
   };
 
-  for (let i = 0; i < trunk.path.length - 1; i++) {
-    const width = trunk.widths[i];
+  // The stripes continue down the underground taproot (groundRoots[0] by
+  // construction), so trunk and root read as one striped piece of wood.
+  const taproot = layout.groundRoots[0];
+  const pre = taproot ? [...taproot.path].reverse().slice(0, -1) : [];
+  const path = [...pre, ...trunk.path];
+  const widths = [
+    ...pre.map((_, i) =>
+      taproot.tipWidth + (taproot.baseWidth - taproot.tipWidth) * (i / Math.max(1, pre.length)),
+    ),
+    ...trunk.widths,
+  ];
+
+  for (let i = 0; i < path.length - 1; i++) {
+    const width = widths[i];
     const wCells = Math.max(1, Math.round(width / PIXEL));
     for (let j = 0; j < wCells; j++) {
       const u = wCells === 1 ? 0.5 : j / (wCells - 1);
@@ -191,8 +204,8 @@ function drawTrunkStripes(ctx: CanvasRenderingContext2D, layout: TreeLayout) {
       const dx = (j - (wCells - 1) / 2) * PIXEL;
       drawPixelLine(
         ctx,
-        { x: trunk.path[i].x + dx, y: trunk.path[i].y },
-        { x: trunk.path[i + 1].x + dx, y: trunk.path[i + 1].y },
+        { x: path[i].x + dx, y: path[i].y },
+        { x: path[i + 1].x + dx, y: path[i + 1].y },
         PIXEL,
         rgbString(rgb),
       );
@@ -203,6 +216,21 @@ function drawTrunkStripes(ctx: CanvasRenderingContext2D, layout: TreeLayout) {
 export interface RenderOptions {
   progress: ProgressMap;
   highlightedId: string | null;
+}
+
+/** Average tint of the striped trunk — roots painted with it read as the same wood. */
+function rootWoodColor(layout: TreeLayout): string {
+  const n = layout.branches.length;
+  if (n === 0) return COLORS.wood;
+  const acc: Rgb = [0, 0, 0];
+  for (const b of layout.branches) {
+    const c = branchRgb(b.branchId);
+    acc[0] += c[0];
+    acc[1] += c[1];
+    acc[2] += c[2];
+  }
+  const avg: Rgb = [Math.round(acc[0] / n), Math.round(acc[1] / n), Math.round(acc[2] / n)];
+  return rgbString(lerpRgb(avg, WOOD_RGB, 0.5));
 }
 
 export function renderTree(
@@ -222,12 +250,13 @@ export function renderTree(
   // Integer translation keeps the fat-pixel grid aligned to canvas pixels.
   ctx.translate(Math.round(-bounds.minX), Math.round(-bounds.minY));
 
+  const rootColor = rootWoodColor(layout);
   for (const g of layout.groundRoots) {
-    drawTaperedPath(ctx, g.path, g.baseWidth, g.tipWidth, COLORS.root);
+    drawTaperedPath(ctx, g.path, g.baseWidth, g.tipWidth, rootColor);
   }
 
   for (const root of layout.roots) {
-    drawTaperedPath(ctx, root.path, root.baseWidth, root.tipWidth, COLORS.root);
+    drawTaperedPath(ctx, root.path, root.baseWidth, root.tipWidth, rootColor);
     drawAchievementFruit(ctx, root.leaf.center, root.status, options.highlightedId === root.customId);
   }
 

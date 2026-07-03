@@ -33,12 +33,12 @@ const BRANCH_JITTER = 0.18;
 
 // Chained ("сюжетные") achievements grow outward from their parent leaf,
 // one step per link, so a requires-chain reads as one long twig.
-const CHAIN_STEP = 24;
+const CHAIN_STEP = 28;
 const CHAIN_FORK_SPREAD = 0.9;
 
 // Fruits are pushed apart until no two are closer than this (fruit is ~15
-// world units across, so this guarantees a visible gap).
-const MIN_FRUIT_DIST = 18;
+// world units across, so this guarantees a clear gap of several pixels).
+const MIN_FRUIT_DIST = 26;
 
 // Decorative foliage keeps this distance from achievement "fruits" so the
 // clickable spots stay visually clean.
@@ -135,15 +135,17 @@ function blendAngle(a: number, b: number, k: number): number {
 // Must match the renderer's PIXEL so cluster blocks sit on the same grid.
 const LEAF_BLOCK = 3;
 
-/** Solid chunky blob with ragged edges — overlapping blobs merge into a crown mass. */
+/** Big rounded blob with slightly ragged edges — overlapping blobs merge into a full canopy. */
 function buildLeafCluster(center: Point, seed: number): LeafCluster {
   const rng = mulberry32(seed);
-  const radiusCells = 2 + Math.floor(rng() * 2);
+  const radiusCells = 3 + Math.floor(rng() * 3);
   const blocks: Point[] = [];
   for (let dx = -radiusCells; dx <= radiusCells; dx++) {
     for (let dy = -radiusCells; dy <= radiusCells; dy++) {
-      if (dx * dx + dy * dy > radiusCells * radiusCells + 0.5) continue;
-      if (rng() < 0.22) continue;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > radiusCells * radiusCells + 0.5) continue;
+      // Full core, ragged rim.
+      if (d2 > (radiusCells - 1) * (radiusCells - 1) && rng() < 0.4) continue;
       blocks.push({ x: center.x + dx * LEAF_BLOCK, y: center.y + dy * LEAF_BLOCK });
     }
   }
@@ -223,12 +225,12 @@ function buildBranch(
   // branches and fruits are painted on top of it.
   const foliage: LeafCluster[] = [];
   const frng = mulberry32(hashString(`foliage:${branch.id}`));
-  const clusterCount = Math.max(32, Math.round(segmentCount * 6.5));
+  const clusterCount = Math.max(28, Math.round(segmentCount * 5));
   for (let c = 0; c < clusterCount; c++) {
     const t = 0.15 + 0.85 * (c / Math.max(1, clusterCount - 1));
     const { point, normal } = pointAtArcLength(path, t);
     const side = c % 2 === 0 ? 1 : -1;
-    const offset = 5 + frng() * 20;
+    const offset = 5 + frng() * 22;
     foliage.push(
       buildLeafCluster(
         { x: point.x + normal.x * offset * side, y: point.y + normal.y * offset * side },
@@ -238,8 +240,8 @@ function buildBranch(
   }
   const tip = path[path.length - 1];
   for (let k = 0; k < 6; k++) {
-    const a = dirAngle + (frng() - 0.5) * 0.8;
-    const r = 6 + k * 6;
+    const a = dirAngle + (frng() - 0.5) * 0.9;
+    const r = 8 + k * 8;
     foliage.push(
       buildLeafCluster(
         { x: tip.x + Math.cos(a) * r, y: tip.y + Math.sin(a) * r },
@@ -290,12 +292,13 @@ function buildRoot(custom: CustomAchievement, attach: Point, index: number): Roo
 function buildGroundRoots(base: Point): { layouts: GroundRootLayout[]; fork: Point } {
   const taproot: Point[] = [
     { x: base.x, y: base.y },
-    { x: base.x + 1.5, y: base.y + 14 },
-    { x: base.x - 1, y: base.y + 28 },
+    { x: base.x + 1.5, y: base.y + 18 },
+    { x: base.x - 1, y: base.y + 37 },
+    { x: base.x + 0.5, y: base.y + 56 },
   ];
   const fork = taproot[taproot.length - 1];
   const layouts: GroundRootLayout[] = [
-    { path: taproot, baseWidth: TRUNK_BASE_WIDTH * 0.85, tipWidth: 15 },
+    { path: taproot, baseWidth: TRUNK_BASE_WIDTH, tipWidth: 17 },
   ];
   const angles = [-0.95, -0.5, 0.05, 0.5, 0.95];
   angles.forEach((rel, i) => {
@@ -308,8 +311,8 @@ function buildGroundRoots(base: Point): { layouts: GroundRootLayout[]; fork: Poi
         hashString(`groundroot:${i}`),
         0.25,
       ),
-      baseWidth: 9,
-      tipWidth: 2.5,
+      baseWidth: 11,
+      tipWidth: 3,
     });
   });
   return { layouts, fork };
