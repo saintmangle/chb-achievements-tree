@@ -233,11 +233,10 @@ export function renderTree(
 
   drawTrunkStripes(ctx, layout);
 
+  // Pass 1 — the whole crown as a background layer. A foliage cluster turns
+  // green when a completed fruit is nearby, so each checked-off achievement
+  // greens its own patch of the crown.
   for (const branch of layout.branches) {
-    drawTaperedPath(ctx, branch.path, branch.baseWidth, branch.tipWidth, branchColor(branch.branchId));
-
-    // A foliage cluster turns green when a completed fruit is nearby, so each
-    // checked-off achievement greens its own patch of the crown.
     const completedCenters = branch.twigs
       .filter((t) => options.progress[t.achievementId])
       .map((t) => t.leaf.center);
@@ -246,7 +245,12 @@ export function renderTree(
       const palette = green ? FOLIAGE_GREEN : FOLIAGE_CREAM;
       drawLeafCluster(ctx, leaf, palette[(branch.branchId * 7 + i) % palette.length]);
     });
+  }
 
+  // Pass 2 — branches and fruits on top, so all 14 directions and every
+  // clickable fruit stay readable against the crown.
+  for (const branch of layout.branches) {
+    drawTaperedPath(ctx, branch.path, branch.baseWidth, branch.tipWidth, branchColor(branch.branchId));
     for (const twig of branch.twigs) {
       drawPixelLine(ctx, twig.stub[0], twig.stub[1], PIXEL, branchStubColor(branch.branchId));
     }

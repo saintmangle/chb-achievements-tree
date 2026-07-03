@@ -38,7 +38,7 @@ const CHAIN_FORK_SPREAD = 0.5;
 
 // Decorative foliage keeps this distance from achievement "fruits" so the
 // clickable spots stay visually clean.
-const FOLIAGE_CLEARANCE = 17;
+const FOLIAGE_CLEARANCE = 13;
 
 const ROOT_SEGMENT_LENGTH = 12;
 
@@ -128,17 +128,20 @@ function blendAngle(a: number, b: number, k: number): number {
   return a + d * k;
 }
 
+// Must match the renderer's PIXEL so cluster blocks sit on the same grid.
+const LEAF_BLOCK = 3;
+
+/** Solid chunky blob with ragged edges — overlapping blobs merge into a crown mass. */
 function buildLeafCluster(center: Point, seed: number): LeafCluster {
   const rng = mulberry32(seed);
-  const blockCount = 7 + Math.floor(rng() * 5);
+  const radiusCells = 2 + Math.floor(rng() * 2);
   const blocks: Point[] = [];
-  for (let i = 0; i < blockCount; i++) {
-    const angle = rng() * Math.PI * 2;
-    const radius = rng() * 7.5;
-    blocks.push({
-      x: center.x + Math.cos(angle) * radius,
-      y: center.y + Math.sin(angle) * radius,
-    });
+  for (let dx = -radiusCells; dx <= radiusCells; dx++) {
+    for (let dy = -radiusCells; dy <= radiusCells; dy++) {
+      if (dx * dx + dy * dy > radiusCells * radiusCells + 0.5) continue;
+      if (rng() < 0.22) continue;
+      blocks.push({ x: center.x + dx * LEAF_BLOCK, y: center.y + dy * LEAF_BLOCK });
+    }
   }
   return { center, blocks, radius: 12 };
 }
@@ -210,16 +213,17 @@ function buildBranch(
     placeChain(achievement, point, leafCenter);
   });
 
-  // Lush decorative foliage: clusters along the outer 2/3 of the branch and a
-  // cap of clusters past the tip.
+  // Dense crown: lots of clusters on both sides of the branch at varying
+  // distances plus a thick cap past the tip. Drawn as a background layer —
+  // branches and fruits are painted on top of it.
   const foliage: LeafCluster[] = [];
   const frng = mulberry32(hashString(`foliage:${branch.id}`));
-  const clusterCount = Math.max(10, Math.round(segmentCount * 2.4));
+  const clusterCount = Math.max(32, Math.round(segmentCount * 6.5));
   for (let c = 0; c < clusterCount; c++) {
-    const t = 0.22 + 0.78 * (c / Math.max(1, clusterCount - 1));
+    const t = 0.15 + 0.85 * (c / Math.max(1, clusterCount - 1));
     const { point, normal } = pointAtArcLength(path, t);
     const side = c % 2 === 0 ? 1 : -1;
-    const offset = 6 + frng() * 15;
+    const offset = 5 + frng() * 33;
     foliage.push(
       buildLeafCluster(
         { x: point.x + normal.x * offset * side, y: point.y + normal.y * offset * side },
@@ -228,9 +232,9 @@ function buildBranch(
     );
   }
   const tip = path[path.length - 1];
-  for (let k = 0; k < 5; k++) {
-    const a = dirAngle + (frng() - 0.5) * 1.1;
-    const r = 10 + k * 9;
+  for (let k = 0; k < 8; k++) {
+    const a = dirAngle + (frng() - 0.5) * 1.4;
+    const r = 8 + k * 8;
     foliage.push(
       buildLeafCluster(
         { x: tip.x + Math.cos(a) * r, y: tip.y + Math.sin(a) * r },
