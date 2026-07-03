@@ -2,6 +2,7 @@ import type { Achievement, Branch, CustomAchievement } from "../types";
 import { hashString, mulberry32 } from "./prng";
 import type {
   BranchLayout,
+  GroundRootLayout,
   LeafCluster,
   Point,
   RootLayout,
@@ -11,23 +12,29 @@ import type {
   TwigLayout,
 } from "./types";
 
-const TRUNK_HEIGHT = 260;
-const TRUNK_SEGMENTS = 26;
-const TRUNK_BASE_WIDTH = 16;
-const TRUNK_TOP_WIDTH = 6;
+const TRUNK_HEIGHT = 270;
+const TRUNK_SEGMENTS = 27;
+const TRUNK_BASE_WIDTH = 27;
+const TRUNK_TOP_WIDTH = 15;
 
-const BRANCH_ATTACH_FROM = 0.24;
-const BRANCH_ATTACH_TO = 0.97;
-const BRANCH_BASE_LENGTH = 34;
-const BRANCH_LENGTH_PER_TWIG = 8.5;
+// Branches attach along the trunk and fan out without crossing: on each side
+// the lowest branch grows almost horizontally and every branch above it grows
+// steeper, so each one stays inside its own angular sector.
+const BRANCH_ATTACH_FROM = 0.3;
+const BRANCH_ATTACH_TO = 0.96;
+const BRANCH_ANGLE_FROM = (9 * Math.PI) / 180;
+const BRANCH_ANGLE_TO = (76 * Math.PI) / 180;
+const BRANCH_BASE_LENGTH = 46;
+const BRANCH_LENGTH_PER_TWIG = 9;
 const BRANCH_SEGMENT_LENGTH = 9;
-
-const ROOT_SEGMENT_LENGTH = 9;
+const BRANCH_JITTER = 0.18;
 
 // Chained ("сюжетные") achievements grow outward from their parent leaf,
 // one step per link, so a requires-chain reads as one long twig.
-const CHAIN_STEP = 16;
-const CHAIN_FORK_SPREAD = 0.6;
+const CHAIN_STEP = 17;
+const CHAIN_FORK_SPREAD = 0.5;
+
+const ROOT_SEGMENT_LENGTH = 9;
 
 function dist(a: Point, b: Point): number {
   return Math.hypot(b.x - a.x, b.y - a.y);
@@ -40,7 +47,7 @@ function buildTrunk(): TrunkLayout {
   let x = 0;
   for (let i = 0; i <= TRUNK_SEGMENTS; i++) {
     const t = i / TRUNK_SEGMENTS;
-    x += (rng() - 0.5) * 3 * (1 - t * 0.3);
+    x += (rng() - 0.5) * 2 * (1 - t * 0.3);
     x *= 0.9;
     path.push({ x, y: -t * TRUNK_HEIGHT });
     widths.push(TRUNK_BASE_WIDTH + (TRUNK_TOP_WIDTH - TRUNK_BASE_WIDTH) * t);
@@ -53,21 +60,23 @@ function trunkPointAt(trunk: TrunkLayout, t: number): Point {
   return trunk.path[Math.min(trunk.path.length - 1, Math.max(0, idx))];
 }
 
-/** Random-walk polyline: outward + slightly biased vertically, deterministic per seed. */
+/** Polyline that wanders gently around a fixed base direction — it can wiggle but never turns away from its sector. */
 function buildWalkPath(
   start: Point,
-  side: 1 | -1,
+  baseDir: number,
   segmentCount: number,
   segmentLength: number,
-  verticalBias: number,
   seed: number,
+  jitter: number,
 ): Point[] {
   const rng = mulberry32(seed);
   const path: Point[] = [start];
-  let dir = side === 1 ? -0.3 : Math.PI + 0.3;
+  let wander = 0;
   let cur = start;
   for (let i = 0; i < segmentCount; i++) {
-    dir += (rng() - 0.5) * 0.55 + verticalBias * side * 0 + verticalBias;
+    wander += (rng() - 0.5) * jitter;
+    wander *= 0.9;
+    const dir = baseDir + wander;
     const next: Point = {
       x: cur.x + Math.cos(dir) * segmentLength,
       y: cur.y + Math.sin(dir) * segmentLength,
@@ -106,27 +115,33 @@ function pointAtArcLength(path: Point[], t: number): { point: Point; normal: Poi
   return { point, normal };
 }
 
+function blendAngle(a: number, b: number, k: number): number {
+  let d = b - a;
+  while (d > Math.PI) d -= 2 * Math.PI;
+  while (d < -Math.PI) d += 2 * Math.PI;
+  return a + d * k;
+}
+
 function buildLeafCluster(center: Point, seed: number): LeafCluster {
   const rng = mulberry32(seed);
-  const blockCount = 4 + Math.floor(rng() * 3);
+  const blockCount = 6 + Math.floor(rng() * 4);
   const blocks: Point[] = [];
   for (let i = 0; i < blockCount; i++) {
     const angle = rng() * Math.PI * 2;
-    const radius = rng() * 4.5;
+    const radius = rng() * 6;
     blocks.push({
       x: center.x + Math.cos(angle) * radius,
       y: center.y + Math.sin(angle) * radius,
     });
   }
-  return { center, blocks, radius: 7 };
+  return { center, blocks, radius: 10 };
 }
 
 function buildBranch(
   branch: Branch,
   branchAchievements: Achievement[],
   attach: Point,
-  side: 1 | -1,
-  attachT: number,
+  dirAngle: number,
 ): BranchLayout {
   const seed = hashString(`branch:${branch.id}`);
   const count = branchAchievements.length;
@@ -145,8 +160,8 @@ function buildBranch(
   }
 
   const targetLength = BRANCH_BASE_LENGTH + starts.length * BRANCH_LENGTH_PER_TWIG;
-  const segmentCount = Math.max(4, Math.round(targetLength / BRANCH_SEGMENT_LENGTH));
-  const path = buildWalkPath(attach, side, segmentCount, BRANCH_SEGMENT_LENGTH, -0.09, seed);
+  const segmentCount = Math.max(5, Math.round(targetLength / BRANCH_SEGMENT_LENGTH));
+  const path = buildWalkPath(attach, dirAngle, segmentCount, BRANCH_SEGMENT_LENGTH, seed, BRANCH_JITTER);
 
   const twigs: TwigLayout[] = [];
 
@@ -161,12 +176,13 @@ function buildBranch(
     });
 
     const children = childrenOf.get(achievement.id) ?? [];
-    const dx = leafCenter.x - from.x;
-    const dy = leafCenter.y - from.y;
-    const baseAngle = Math.atan2(dy, dx);
+    const stubAngle = Math.atan2(leafCenter.y - from.y, leafCenter.x - from.x);
+    // Chains keep growing mostly along the branch's own direction so they
+    // stay inside its sector and can't wander into a neighbouring branch.
+    const baseAngle = blendAngle(stubAngle, dirAngle, 0.65);
     children.forEach((child, k) => {
       const spread = (k - (children.length - 1) / 2) * CHAIN_FORK_SPREAD;
-      const jitter = (mulberry32(hashString(`chain:${child.id}`))() - 0.5) * 0.35;
+      const jitter = (mulberry32(hashString(`chain:${child.id}`))() - 0.5) * 0.3;
       const angle = baseAngle + spread + jitter;
       const childLeaf: Point = {
         x: leafCenter.x + Math.cos(angle) * CHAIN_STEP,
@@ -180,7 +196,7 @@ function buildBranch(
     const t = (i + 1) / (starts.length + 1);
     const { point, normal } = pointAtArcLength(path, t);
     const twigSide = i % 2 === 0 ? 1 : -1;
-    const offset = 9 + (i % 3) * 2.5;
+    const offset = 10 + (i % 3) * 3;
     const leafCenter: Point = {
       x: point.x + normal.x * offset * twigSide,
       y: point.y + normal.y * offset * twigSide,
@@ -188,22 +204,53 @@ function buildBranch(
     placeChain(achievement, point, leafCenter);
   });
 
+  // Lush decorative foliage: clusters along the outer 2/3 of the branch and a
+  // cap of clusters past the tip.
+  const foliage: LeafCluster[] = [];
+  const frng = mulberry32(hashString(`foliage:${branch.id}`));
+  const clusterCount = Math.max(6, Math.round(segmentCount * 1.5));
+  for (let c = 0; c < clusterCount; c++) {
+    const t = 0.3 + 0.7 * (c / Math.max(1, clusterCount - 1));
+    const { point, normal } = pointAtArcLength(path, t);
+    const side = c % 2 === 0 ? 1 : -1;
+    const offset = 6 + frng() * 10;
+    foliage.push(
+      buildLeafCluster(
+        { x: point.x + normal.x * offset * side, y: point.y + normal.y * offset * side },
+        hashString(`fol:${branch.id}:${c}`),
+      ),
+    );
+  }
+  const tip = path[path.length - 1];
+  for (let k = 0; k < 3; k++) {
+    const a = dirAngle + (frng() - 0.5) * 0.9;
+    const r = 8 + k * 9;
+    foliage.push(
+      buildLeafCluster(
+        { x: tip.x + Math.cos(a) * r, y: tip.y + Math.sin(a) * r },
+        hashString(`foltip:${branch.id}:${k}`),
+      ),
+    );
+  }
+
   return {
     branchId: branch.id,
     title: branch.title,
     path,
-    attachT,
-    baseWidth: 4 + Math.min(6, count * 0.18),
-    tipWidth: 1.5,
+    baseWidth: 6 + Math.min(6, count * 0.18),
+    tipWidth: 2.5,
     twigs,
+    foliage,
   };
 }
 
-function buildRoot(custom: CustomAchievement, attach: Point, side: 1 | -1, index: number): RootLayout {
+function buildRoot(custom: CustomAchievement, attach: Point, index: number): RootLayout {
   const seed = hashString(`root:${custom.id}`);
-  const segmentCount = 4 + (hashString(`rootlen:${custom.id}`) % 3);
-  const jitteredAttach: Point = { x: attach.x + side * (index % 4) * 1.5, y: attach.y };
-  const path = buildWalkPath(jitteredAttach, side, segmentCount, ROOT_SEGMENT_LENGTH, 0.1, seed);
+  // Fan the personal roots across the down hemisphere, one sector per root.
+  const spread = ((index * 0.47) % 2) - 1;
+  const dirAngle = Math.PI / 2 + spread * 1.0;
+  const segmentCount = 5 + (hashString(`rootlen:${custom.id}`) % 3);
+  const path = buildWalkPath(attach, dirAngle, segmentCount, ROOT_SEGMENT_LENGTH, seed, 0.25);
   const tip = path[path.length - 1];
 
   return {
@@ -211,10 +258,27 @@ function buildRoot(custom: CustomAchievement, attach: Point, side: 1 | -1, index
     text: custom.text,
     status: custom.status,
     path,
-    baseWidth: 4,
-    tipWidth: 1.5,
+    baseWidth: 5,
+    tipWidth: 2,
     leaf: buildLeafCluster(tip, hashString(`rootleaf:${custom.id}`)),
   };
+}
+
+/** The tree always has a few bare roots, even before any custom achievements exist. */
+function buildGroundRoots(base: Point): GroundRootLayout[] {
+  const angles = [-0.8, -0.35, 0.2, 0.7];
+  return angles.map((rel, i) => ({
+    path: buildWalkPath(
+      base,
+      Math.PI / 2 + rel,
+      6 + (i % 2),
+      ROOT_SEGMENT_LENGTH,
+      hashString(`groundroot:${i}`),
+      0.25,
+    ),
+    baseWidth: 6,
+    tipWidth: 2,
+  }));
 }
 
 function expandBounds(bounds: TreeBounds, p: Point, pad = 0) {
@@ -243,40 +307,52 @@ export function buildTreeLayout(
   // the roots below, not as a regular branch.
   const fixedBranches = branches.filter((b) => (byBranch.get(b.id)?.length ?? 0) > 0);
 
-  const branchLayouts: BranchLayout[] = fixedBranches.map((branch, i) => {
-    const t =
-      fixedBranches.length === 1
-        ? (BRANCH_ATTACH_FROM + BRANCH_ATTACH_TO) / 2
-        : BRANCH_ATTACH_FROM + (i / (fixedBranches.length - 1)) * (BRANCH_ATTACH_TO - BRANCH_ATTACH_FROM);
-    const jitter = (mulberry32(hashString(`attach:${branch.id}`))() - 0.5) * 0.04;
-    const attachT = Math.min(1, Math.max(0, t + jitter));
-    const attach = trunkPointAt(trunk, attachT);
-    const side: 1 | -1 = i % 2 === 0 ? 1 : -1;
-    return buildBranch(branch, byBranch.get(branch.id) ?? [], attach, side, attachT);
-  });
+  const leftSide = fixedBranches.filter((_, i) => i % 2 === 0);
+  const rightSide = fixedBranches.filter((_, i) => i % 2 === 1);
 
-  const rootLayouts: RootLayout[] = customAchievements.map((custom, i) => {
-    const side: 1 | -1 = i % 2 === 0 ? 1 : -1;
-    return buildRoot(custom, trunk.path[0], side, i);
-  });
+  const buildSide = (side: Branch[], isLeft: boolean): BranchLayout[] =>
+    side.map((branch, k) => {
+      const frac = side.length === 1 ? 0.5 : k / (side.length - 1);
+      const jitter = (mulberry32(hashString(`attach:${branch.id}`))() - 0.5) * 0.03;
+      const attachT = Math.min(
+        1,
+        Math.max(0, BRANCH_ATTACH_FROM + frac * (BRANCH_ATTACH_TO - BRANCH_ATTACH_FROM) + jitter),
+      );
+      const attach = trunkPointAt(trunk, attachT);
+      const angle = BRANCH_ANGLE_FROM + frac * (BRANCH_ANGLE_TO - BRANCH_ANGLE_FROM);
+      // Canvas y grows downward, so "up and outward" is negative sin.
+      const dirAngle = isLeft ? Math.PI + angle : -angle;
+      return buildBranch(branch, byBranch.get(branch.id) ?? [], attach, dirAngle);
+    });
+
+  // Order matters for the trunk stripes: left side first, then right —
+  // the renderer paints stripes across the trunk in this order.
+  const branchLayouts: BranchLayout[] = [...buildSide(leftSide, true), ...buildSide(rightSide, false)];
+
+  const rootLayouts: RootLayout[] = customAchievements.map((custom, i) =>
+    buildRoot(custom, trunk.path[0], i),
+  );
+  const groundRoots = buildGroundRoots(trunk.path[0]);
 
   const bounds: TreeBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
   for (const p of trunk.path) expandBounds(bounds, p, TRUNK_BASE_WIDTH);
   for (const b of branchLayouts) {
     for (const p of b.path) expandBounds(bounds, p, b.baseWidth);
-    for (const twig of b.twigs) {
-      expandBounds(bounds, twig.leaf.center, twig.leaf.radius + 6);
-    }
+    for (const twig of b.twigs) expandBounds(bounds, twig.leaf.center, twig.leaf.radius + 8);
+    for (const leaf of b.foliage) expandBounds(bounds, leaf.center, leaf.radius + 8);
   }
   for (const r of rootLayouts) {
     for (const p of r.path) expandBounds(bounds, p, r.baseWidth);
-    expandBounds(bounds, r.leaf.center, r.leaf.radius + 6);
+    expandBounds(bounds, r.leaf.center, r.leaf.radius + 8);
   }
-  const margin = 24;
+  for (const g of groundRoots) {
+    for (const p of g.path) expandBounds(bounds, p, g.baseWidth);
+  }
+  const margin = 30;
   bounds.minX -= margin;
   bounds.maxX += margin;
   bounds.minY -= margin;
   bounds.maxY += margin;
 
-  return { trunk, branches: branchLayouts, roots: rootLayouts, bounds };
+  return { trunk, branches: branchLayouts, roots: rootLayouts, groundRoots, bounds };
 }

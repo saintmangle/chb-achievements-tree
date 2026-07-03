@@ -206,12 +206,12 @@ export const TreeCanvas = forwardRef<TreeCanvasHandle, TreeCanvasProps>(function
   const horizonY = (0 - layout.bounds.minY) * camera.scale + camera.ty;
   const skyGroundBackground = [
     "linear-gradient(to bottom",
-    "#0b131f 0px",
-    `#1a2a35 ${Math.round(horizonY - 60)}px`,
-    `#24343a ${Math.round(horizonY)}px`,
-    `#332818 ${Math.round(horizonY)}px`,
-    `#241b10 ${Math.round(horizonY + 80)}px`,
-    "#150f08 100%)",
+    "#2f6bab 0px",
+    `#4f8ec7 ${Math.round(horizonY - 80)}px`,
+    `#66a3d6 ${Math.round(horizonY)}px`,
+    `#8a5526 ${Math.round(horizonY)}px`,
+    `#5c3818 ${Math.round(horizonY + 70)}px`,
+    "#3a220f 100%)",
   ].join(", ");
 
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {

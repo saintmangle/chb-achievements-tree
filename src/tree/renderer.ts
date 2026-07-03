@@ -1,14 +1,20 @@
 import type { ProgressMap } from "../types";
 import type { LeafCluster, Point, TreeLayout } from "./types";
 
+// Everything is rasterized onto a fixed square grid of PIXEL×PIXEL world
+// units — axis-aligned, uniform-size "fat pixels", like squares on grid paper.
+const PIXEL = 3;
+
 const COLORS = {
   wood: "#4a3222",
-  root: "#3a2a1c",
-  leafOff: "#8a8a72",
-  leafOn: "#4fae6b",
-  leafOnHighlight: "#6fd98a",
-  leafOffHighlight: "#a8a890",
+  root: "#33241a",
+  leafOff: "#c9c4a0",
+  leafOn: "#57cf7c",
+  leafOnHighlight: "#8af0a8",
+  leafOffHighlight: "#efe9c8",
 };
+
+const FOLIAGE_COLORS = ["#35583a", "#3f6b40", "#4c7a49"];
 
 type Rgb = [number, number, number];
 
@@ -40,7 +46,7 @@ function rgbString([r, g, b]: Rgb): string {
 // trunk brown keeps everything wooden rather than neon.
 function branchRgb(branchId: number): Rgb {
   const hue = (branchId * 137.5) % 360;
-  return lerpRgb(hslToRgb(hue, 0.34, 0.35), WOOD_RGB, 0.35);
+  return lerpRgb(hslToRgb(hue, 0.34, 0.32), WOOD_RGB, 0.35);
 }
 
 function branchColor(branchId: number): string {
@@ -51,7 +57,11 @@ function branchStubColor(branchId: number): string {
   return rgbString(lerpRgb(branchRgb(branchId), [220, 210, 190], 0.18));
 }
 
-/** Bresenham line rasterized as a chain of square "brush" blocks — crisp, no anti-aliasing. */
+function cellOf(v: number): number {
+  return Math.round(v / PIXEL);
+}
+
+/** Bresenham line in grid-cell space; every stamp is an axis-aligned block of whole cells. */
 function drawPixelLine(
   ctx: CanvasRenderingContext2D,
   a: Point,
@@ -59,11 +69,11 @@ function drawPixelLine(
   width: number,
   color: string,
 ) {
-  let x0 = Math.round(a.x);
-  let y0 = Math.round(a.y);
-  const x1 = Math.round(b.x);
-  const y1 = Math.round(b.y);
-  const w = Math.max(1, Math.round(width));
+  let x0 = cellOf(a.x);
+  let y0 = cellOf(a.y);
+  const x1 = cellOf(b.x);
+  const y1 = cellOf(b.y);
+  const w = Math.max(1, Math.round(width / PIXEL));
   const half = Math.floor(w / 2);
 
   const dx = Math.abs(x1 - x0);
@@ -74,7 +84,7 @@ function drawPixelLine(
 
   ctx.fillStyle = color;
   for (;;) {
-    ctx.fillRect(x0 - half, y0 - half, w, w);
+    ctx.fillRect((x0 - half) * PIXEL, (y0 - half) * PIXEL, w * PIXEL, w * PIXEL);
     if (x0 === x1 && y0 === y1) break;
     const e2 = 2 * err;
     if (e2 > -dy) {
@@ -102,35 +112,60 @@ function drawTaperedPath(
   }
 }
 
-function drawLeafCluster(
-  ctx: CanvasRenderingContext2D,
-  leaf: LeafCluster,
-  completed: boolean,
-  highlighted: boolean,
-) {
-  const color = completed
+/** Every leaf block is exactly one grid cell — same size everywhere. */
+function drawLeafCluster(ctx: CanvasRenderingContext2D, leaf: LeafCluster, color: string) {
+  ctx.fillStyle = color;
+  for (const block of leaf.blocks) {
+    ctx.fillRect(cellOf(block.x) * PIXEL, cellOf(block.y) * PIXEL, PIXEL, PIXEL);
+  }
+  ctx.fillRect(cellOf(leaf.center.x) * PIXEL, cellOf(leaf.center.y) * PIXEL, PIXEL, PIXEL);
+}
+
+function achievementLeafColor(completed: boolean, highlighted: boolean): string {
+  return completed
     ? highlighted
       ? COLORS.leafOnHighlight
       : COLORS.leafOn
     : highlighted
       ? COLORS.leafOffHighlight
       : COLORS.leafOff;
-  ctx.fillStyle = color;
-  const blockSize = highlighted ? 4 : 3;
-  for (const block of leaf.blocks) {
-    ctx.fillRect(
-      Math.round(block.x - blockSize / 2),
-      Math.round(block.y - blockSize / 2),
-      blockSize,
-      blockSize,
-    );
+}
+
+/**
+ * Trunk painted as vertical stripes: the trunk's width is divided into
+ * one-cell-wide strips, colored left-to-right with the branch hues (left-side
+ * branches first, then right-side — matching layout order), blended toward
+ * wood so it reads as tinted bark.
+ */
+function drawTrunkStripes(ctx: CanvasRenderingContext2D, layout: TreeLayout) {
+  const { trunk } = layout;
+  const stripeColors = layout.branches.map((b) => branchRgb(b.branchId));
+  const n = stripeColors.length;
+
+  const colorAt = (u: number): Rgb => {
+    if (n === 0) return WOOD_RGB;
+    if (n === 1) return stripeColors[0];
+    const pos = Math.min(1, Math.max(0, u)) * (n - 1);
+    const i = Math.min(n - 2, Math.floor(pos));
+    return lerpRgb(stripeColors[i], stripeColors[i + 1], pos - i);
+  };
+
+  for (let i = 0; i < trunk.path.length - 1; i++) {
+    const width = trunk.widths[i];
+    const wCells = Math.max(1, Math.round(width / PIXEL));
+    for (let j = 0; j < wCells; j++) {
+      const u = wCells === 1 ? 0.5 : j / (wCells - 1);
+      const rgb = lerpRgb(colorAt(u), WOOD_RGB, 0.5);
+      const dx = (j - (wCells - 1) / 2) * PIXEL;
+      drawPixelLine(
+        ctx,
+        { x: trunk.path[i].x + dx, y: trunk.path[i].y },
+        { x: trunk.path[i + 1].x + dx, y: trunk.path[i + 1].y },
+        PIXEL,
+        rgbString(rgb),
+      );
+    }
   }
-  ctx.fillRect(
-    Math.round(leaf.center.x - blockSize / 2),
-    Math.round(leaf.center.y - blockSize / 2),
-    blockSize,
-    blockSize,
-  );
 }
 
 export interface RenderOptions {
@@ -152,61 +187,43 @@ export function renderTree(
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, width, height);
   ctx.save();
-  ctx.translate(-bounds.minX, -bounds.minY);
+  // Integer translation keeps the fat-pixel grid aligned to canvas pixels.
+  ctx.translate(Math.round(-bounds.minX), Math.round(-bounds.minY));
+
+  for (const g of layout.groundRoots) {
+    drawTaperedPath(ctx, g.path, g.baseWidth, g.tipWidth, COLORS.root);
+  }
 
   for (const root of layout.roots) {
     drawTaperedPath(ctx, root.path, root.baseWidth, root.tipWidth, COLORS.root);
-    drawLeafCluster(ctx, root.leaf, root.status, options.highlightedId === root.customId);
+    drawLeafCluster(
+      ctx,
+      root.leaf,
+      achievementLeafColor(root.status, options.highlightedId === root.customId),
+    );
   }
 
-  drawTrunkGradient(ctx, layout);
+  drawTrunkStripes(ctx, layout);
 
   for (const branch of layout.branches) {
     drawTaperedPath(ctx, branch.path, branch.baseWidth, branch.tipWidth, branchColor(branch.branchId));
+    branch.foliage.forEach((leaf, i) => {
+      drawLeafCluster(ctx, leaf, FOLIAGE_COLORS[(branch.branchId * 7 + i) % FOLIAGE_COLORS.length]);
+    });
     for (const twig of branch.twigs) {
-      drawPixelLine(ctx, twig.stub[0], twig.stub[1], 2, branchStubColor(branch.branchId));
+      drawPixelLine(ctx, twig.stub[0], twig.stub[1], PIXEL, branchStubColor(branch.branchId));
+    }
+    for (const twig of branch.twigs) {
       const completed = Boolean(options.progress[twig.achievementId]);
-      drawLeafCluster(ctx, twig.leaf, completed, options.highlightedId === twig.achievementId);
+      drawLeafCluster(
+        ctx,
+        twig.leaf,
+        achievementLeafColor(completed, options.highlightedId === twig.achievementId),
+      );
     }
   }
 
   ctx.restore();
-}
-
-/**
- * Trunk painted segment-by-segment, blending between the hues of the branches
- * attached at each height — the trunk "carries" every branch's colour up to it.
- */
-function drawTrunkGradient(ctx: CanvasRenderingContext2D, layout: TreeLayout) {
-  const { trunk } = layout;
-  const stops = layout.branches
-    .map((b) => ({ t: b.attachT, rgb: branchRgb(b.branchId) }))
-    .sort((a, b) => a.t - b.t);
-
-  const colorAt = (t: number): Rgb => {
-    if (stops.length === 0) return WOOD_RGB;
-    if (t <= stops[0].t) {
-      // Below the first branch: fade from plain wood at the base up to its hue.
-      const k = stops[0].t <= 0 ? 1 : t / stops[0].t;
-      return lerpRgb(WOOD_RGB, stops[0].rgb, k);
-    }
-    for (let i = 0; i < stops.length - 1; i++) {
-      if (t <= stops[i + 1].t) {
-        const span = stops[i + 1].t - stops[i].t || 1;
-        return lerpRgb(stops[i].rgb, stops[i + 1].rgb, (t - stops[i].t) / span);
-      }
-    }
-    return stops[stops.length - 1].rgb;
-  };
-
-  const segments = trunk.path.length - 1;
-  for (let i = 0; i < segments; i++) {
-    const t = i / Math.max(1, segments - 1);
-    const width = trunk.widths[i];
-    // Blend halfway back toward wood so the trunk stays woody, just tinted.
-    const rgb = lerpRgb(colorAt(t), WOOD_RGB, 0.45);
-    drawPixelLine(ctx, trunk.path[i], trunk.path[i + 1], width, rgbString(rgb));
-  }
 }
 
 export interface HitTarget {

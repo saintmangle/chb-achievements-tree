@@ -22,11 +22,11 @@ export interface BranchLayout {
   branchId: number;
   title: string;
   path: Point[];
-  /** Arc-length fraction (0..1) along the trunk where this branch attaches — drives the trunk gradient. */
-  attachT: number;
   baseWidth: number;
   tipWidth: number;
   twigs: TwigLayout[];
+  /** Decorative (non-interactive) leaf clusters that make the crown look lush. */
+  foliage: LeafCluster[];
 }
 
 export interface RootLayout {
@@ -37,6 +37,13 @@ export interface RootLayout {
   baseWidth: number;
   tipWidth: number;
   leaf: LeafCluster;
+}
+
+/** Decorative root with no achievement attached — the tree always has some roots. */
+export interface GroundRootLayout {
+  path: Point[];
+  baseWidth: number;
+  tipWidth: number;
 }
 
 export interface TrunkLayout {
@@ -55,5 +62,6 @@ export interface TreeLayout {
   trunk: TrunkLayout;
   branches: BranchLayout[];
   roots: RootLayout[];
+  groundRoots: GroundRootLayout[];
   bounds: TreeBounds;
 }
