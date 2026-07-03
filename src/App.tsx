@@ -13,6 +13,9 @@ import type { Point } from "./tree/types";
 const achievementById = new Map(achievements.map((a) => [a.id, a]));
 const branchById = new Map(branches.map((b) => [b.id, b]));
 
+// Roots get visually crowded past this point, and it keeps the table tidy.
+const MAX_CUSTOM_ACHIEVEMENTS = 20;
+
 interface Selection {
   target: HitTarget;
   screen: Point;
@@ -23,7 +26,12 @@ export default function App() {
   const telegramUserId = identity?.telegramUserId ?? null;
 
   const { progress, toggleAchievement } = useProgress(telegramUserId);
-  const { items: customAchievements, addCustom, toggleCustom } = useCustomAchievements(telegramUserId);
+  const {
+    items: customAchievements,
+    addCustom,
+    toggleCustom,
+    removeCustom,
+  } = useCustomAchievements(telegramUserId);
 
   const layout = useMemo(
     () => buildTreeLayout(branches, achievements, customAchievements),
@@ -70,6 +78,12 @@ export default function App() {
       description: undefined,
       completed: custom.status,
       onToggle: () => toggleCustom(custom.id),
+      onDelete: () => {
+        if (window.confirm("Удалить это достижение навсегда?")) {
+          removeCustom(custom.id);
+          setSelection(null);
+        }
+      },
     };
   })();
 
@@ -107,13 +121,17 @@ export default function App() {
             description={selectedContent.description}
             completed={selectedContent.completed}
             onToggle={selectedContent.onToggle}
+            onDelete={"onDelete" in selectedContent ? selectedContent.onDelete : undefined}
             onClose={() => setSelection(null)}
           />
         )}
       </div>
 
       <footer className="app-footer">
-        <AchievementForm onAdd={addCustom} />
+        <AchievementForm
+          onAdd={addCustom}
+          limitReached={customAchievements.length >= MAX_CUSTOM_ACHIEVEMENTS}
+        />
       </footer>
     </div>
   );

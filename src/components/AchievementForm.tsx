@@ -2,9 +2,10 @@ import { useState } from "react";
 
 interface AchievementFormProps {
   onAdd: (text: string) => Promise<void>;
+  limitReached?: boolean;
 }
 
-export function AchievementForm({ onAdd }: AchievementFormProps) {
+export function AchievementForm({ onAdd, limitReached }: AchievementFormProps) {
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -17,6 +18,14 @@ export function AchievementForm({ onAdd }: AchievementFormProps) {
     setSubmitting(false);
     setText("");
     setOpen(false);
+  }
+
+  if (limitReached) {
+    return (
+      <button className="add-root-fab" disabled>
+        достигнут лимит: 20 своих достижений
+      </button>
+    );
   }
 
   if (!open) {

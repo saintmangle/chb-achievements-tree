@@ -7,10 +7,11 @@ interface TooltipProps {
   description?: string;
   completed: boolean;
   onToggle: () => void;
+  onDelete?: () => void;
   onClose: () => void;
 }
 
-export function Tooltip({ anchor, title, subtitle, description, completed, onToggle, onClose }: TooltipProps) {
+export function Tooltip({ anchor, title, subtitle, description, completed, onToggle, onDelete, onClose }: TooltipProps) {
   const style = {
     left: Math.round(anchor.x),
     top: Math.round(anchor.y),
@@ -29,6 +30,11 @@ export function Tooltip({ anchor, title, subtitle, description, completed, onTog
           <input type="checkbox" checked={completed} onChange={onToggle} />
           <span>{completed ? "выполнено" : "отметить выполненным"}</span>
         </label>
+        {onDelete && (
+          <button className="tooltip-delete" onClick={onDelete}>
+            удалить
+          </button>
+        )}
       </div>
     </div>
   );

@@ -38,6 +38,15 @@ export function useCustomAchievements(telegramUserId: number | null) {
     [telegramUserId],
   );
 
+  const removeCustom = useCallback(
+    async (id: string) => {
+      setItems((prev) => prev.filter((item) => item.id !== id));
+      const { error } = await supabase.from("user_custom_achievements").delete().eq("id", id);
+      if (error) reload();
+    },
+    [reload],
+  );
+
   const toggleCustom = useCallback(async (id: string) => {
     let nextStatus = false;
     setItems((prev) =>
@@ -53,5 +62,5 @@ export function useCustomAchievements(telegramUserId: number | null) {
     }
   }, []);
 
-  return { items, loaded, addCustom, toggleCustom };
+  return { items, loaded, addCustom, toggleCustom, removeCustom };
 }
