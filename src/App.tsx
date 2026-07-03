@@ -41,7 +41,9 @@ export default function App() {
   const [selection, setSelection] = useState<Selection | null>(null);
   const treeRef = useRef<TreeCanvasHandle>(null);
 
-  const completedCount = Object.keys(progress).length;
+  const completedCount =
+    Object.keys(progress).length + customAchievements.filter((c) => c.status).length;
+  const totalCount = achievements.length + customAchievements.length;
 
   if (status === "loading") {
     return <div className="status-screen">загружаем дерево…</div>;
@@ -92,7 +94,7 @@ export default function App() {
       <header className="app-header">
         <div className="app-title">Ачивки в реальной жизни</div>
         <div className="app-progress">
-          {completedCount} / {achievements.length}
+          {completedCount} / {totalCount}
         </div>
         <button className="fit-all-btn" onClick={() => treeRef.current?.fitAll()}>
           показать всё

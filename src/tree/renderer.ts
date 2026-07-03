@@ -269,8 +269,12 @@ export function renderTree(
     const completedCenters = branch.twigs
       .filter((t) => options.progress[t.achievementId])
       .map((t) => t.leaf.center);
+    // A fully completed branch turns green edge to edge — no cream stragglers.
+    const branchDone = branch.twigs.length > 0 && completedCenters.length === branch.twigs.length;
     branch.foliage.forEach((leaf, i) => {
-      const green = completedCenters.some((c) => distSq(c, leaf.center) < GREEN_RADIUS * GREEN_RADIUS);
+      const green =
+        branchDone ||
+        completedCenters.some((c) => distSq(c, leaf.center) < GREEN_RADIUS * GREEN_RADIUS);
       const palette = green ? FOLIAGE_GREEN : FOLIAGE_CREAM;
       drawLeafCluster(ctx, leaf, palette[(branch.branchId * 7 + i) % palette.length]);
     });
