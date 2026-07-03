@@ -11,6 +11,7 @@ import type { HitTarget } from "./tree/renderer";
 import type { Point } from "./tree/types";
 
 const achievementById = new Map(achievements.map((a) => [a.id, a]));
+const branchById = new Map(branches.map((b) => [b.id, b]));
 
 interface Selection {
   target: HitTarget;
@@ -54,7 +55,8 @@ export default function App() {
       const a = achievementById.get(selection.target.id);
       if (!a) return null;
       return {
-        title: a.title,
+        title: `${a.id} · ${a.title}`,
+        subtitle: branchById.get(a.branch_id)?.title,
         description: a.description as string | undefined,
         completed: Boolean(progress[a.id]),
         onToggle: () => toggleAchievement(a.id),
@@ -64,6 +66,7 @@ export default function App() {
     if (!custom) return null;
     return {
       title: custom.text,
+      subtitle: "своё достижение",
       description: undefined,
       completed: custom.status,
       onToggle: () => toggleCustom(custom.id),
@@ -100,6 +103,7 @@ export default function App() {
           <Tooltip
             anchor={selection.screen}
             title={selectedContent.title}
+            subtitle={selectedContent.subtitle}
             description={selectedContent.description}
             completed={selectedContent.completed}
             onToggle={selectedContent.onToggle}

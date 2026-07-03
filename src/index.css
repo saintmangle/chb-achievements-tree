@@ -25,7 +25,7 @@ body,
 }
 
 body {
-  background: radial-gradient(ellipse at 50% 20%, var(--bg-top), var(--bg-bottom));
+  background: #0b131f;
   overflow: hidden;
 }
 
@@ -148,6 +148,12 @@ body {
   font-weight: bold;
   margin-bottom: 4px;
   padding-right: 14px;
+}
+
+.tooltip-subtitle {
+  color: var(--accent-green);
+  font-size: 11px;
+  margin-bottom: 4px;
 }
 
 .tooltip-description {

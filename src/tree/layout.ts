@@ -24,6 +24,11 @@ const BRANCH_SEGMENT_LENGTH = 9;
 
 const ROOT_SEGMENT_LENGTH = 9;
 
+// Chained ("сюжетные") achievements grow outward from their parent leaf,
+// one step per link, so a requires-chain reads as one long twig.
+const CHAIN_STEP = 16;
+const CHAIN_FORK_SPREAD = 0.6;
+
 function dist(a: Point, b: Point): number {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
@@ -121,15 +126,58 @@ function buildBranch(
   branchAchievements: Achievement[],
   attach: Point,
   side: 1 | -1,
+  attachT: number,
 ): BranchLayout {
   const seed = hashString(`branch:${branch.id}`);
   const count = branchAchievements.length;
-  const targetLength = BRANCH_BASE_LENGTH + count * BRANCH_LENGTH_PER_TWIG;
+
+  const ids = new Set(branchAchievements.map((a) => a.id));
+  const childrenOf = new Map<string, Achievement[]>();
+  const starts: Achievement[] = [];
+  for (const a of branchAchievements) {
+    if (a.requires && ids.has(a.requires)) {
+      const list = childrenOf.get(a.requires) ?? [];
+      list.push(a);
+      childrenOf.set(a.requires, list);
+    } else {
+      starts.push(a);
+    }
+  }
+
+  const targetLength = BRANCH_BASE_LENGTH + starts.length * BRANCH_LENGTH_PER_TWIG;
   const segmentCount = Math.max(4, Math.round(targetLength / BRANCH_SEGMENT_LENGTH));
   const path = buildWalkPath(attach, side, segmentCount, BRANCH_SEGMENT_LENGTH, -0.09, seed);
 
-  const twigs: TwigLayout[] = branchAchievements.map((achievement, i) => {
-    const t = (i + 1) / (count + 1);
+  const twigs: TwigLayout[] = [];
+
+  const placeChain = (achievement: Achievement, from: Point, leafCenter: Point) => {
+    twigs.push({
+      achievementId: achievement.id,
+      branchId: branch.id,
+      title: achievement.title,
+      description: achievement.description,
+      stub: [from, leafCenter],
+      leaf: buildLeafCluster(leafCenter, hashString(`leaf:${achievement.id}`)),
+    });
+
+    const children = childrenOf.get(achievement.id) ?? [];
+    const dx = leafCenter.x - from.x;
+    const dy = leafCenter.y - from.y;
+    const baseAngle = Math.atan2(dy, dx);
+    children.forEach((child, k) => {
+      const spread = (k - (children.length - 1) / 2) * CHAIN_FORK_SPREAD;
+      const jitter = (mulberry32(hashString(`chain:${child.id}`))() - 0.5) * 0.35;
+      const angle = baseAngle + spread + jitter;
+      const childLeaf: Point = {
+        x: leafCenter.x + Math.cos(angle) * CHAIN_STEP,
+        y: leafCenter.y + Math.sin(angle) * CHAIN_STEP,
+      };
+      placeChain(child, leafCenter, childLeaf);
+    });
+  };
+
+  starts.forEach((achievement, i) => {
+    const t = (i + 1) / (starts.length + 1);
     const { point, normal } = pointAtArcLength(path, t);
     const twigSide = i % 2 === 0 ? 1 : -1;
     const offset = 9 + (i % 3) * 2.5;
@@ -137,20 +185,14 @@ function buildBranch(
       x: point.x + normal.x * offset * twigSide,
       y: point.y + normal.y * offset * twigSide,
     };
-    return {
-      achievementId: achievement.id,
-      branchId: branch.id,
-      title: achievement.title,
-      description: achievement.description,
-      stub: [point, leafCenter],
-      leaf: buildLeafCluster(leafCenter, hashString(`leaf:${achievement.id}`)),
-    };
+    placeChain(achievement, point, leafCenter);
   });
 
   return {
     branchId: branch.id,
     title: branch.title,
     path,
+    attachT,
     baseWidth: 4 + Math.min(6, count * 0.18),
     tipWidth: 1.5,
     twigs,
@@ -207,9 +249,10 @@ export function buildTreeLayout(
         ? (BRANCH_ATTACH_FROM + BRANCH_ATTACH_TO) / 2
         : BRANCH_ATTACH_FROM + (i / (fixedBranches.length - 1)) * (BRANCH_ATTACH_TO - BRANCH_ATTACH_FROM);
     const jitter = (mulberry32(hashString(`attach:${branch.id}`))() - 0.5) * 0.04;
-    const attach = trunkPointAt(trunk, Math.min(1, Math.max(0, t + jitter)));
+    const attachT = Math.min(1, Math.max(0, t + jitter));
+    const attach = trunkPointAt(trunk, attachT);
     const side: 1 | -1 = i % 2 === 0 ? 1 : -1;
-    return buildBranch(branch, byBranch.get(branch.id) ?? [], attach, side);
+    return buildBranch(branch, byBranch.get(branch.id) ?? [], attach, side, attachT);
   });
 
   const rootLayouts: RootLayout[] = customAchievements.map((custom, i) => {

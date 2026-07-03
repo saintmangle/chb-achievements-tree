@@ -176,14 +176,13 @@ export const TreeCanvas = forwardRef<TreeCanvasHandle, TreeCanvasProps>(function
       return;
     }
 
+    // Mouse hover: only feedback via cursor — selection happens on click, so the
+    // tooltip doesn't vanish while the mouse travels from the leaf to the tooltip.
     if (pointers.current.size === 0 && e.pointerType === "mouse") {
       const world = screenToWorld(p);
       const target = hitTest(layout, world, HIT_RADIUS_SCREEN_PX / camera.scale);
-      if (target) {
-        onSelect(target, worldToScreen(target.screenAnchor));
-      } else if (!activeId) {
-        onSelect(null, null);
-      }
+      const container = containerRef.current;
+      if (container) container.style.cursor = target ? "pointer" : "grab";
     }
   };
 
@@ -200,6 +199,20 @@ export const TreeCanvas = forwardRef<TreeCanvasHandle, TreeCanvasProps>(function
     }
     dragState.current = null;
   };
+
+  // Sky above / earth below, split at the world-space ground line (y=0, the
+  // trunk base). Recomputed from the camera so the horizon pans and zooms with
+  // the tree; the roots end up "buried" in the earth band.
+  const horizonY = (0 - layout.bounds.minY) * camera.scale + camera.ty;
+  const skyGroundBackground = [
+    "linear-gradient(to bottom",
+    "#0b131f 0px",
+    `#1a2a35 ${Math.round(horizonY - 60)}px`,
+    `#24343a ${Math.round(horizonY)}px`,
+    `#332818 ${Math.round(horizonY)}px`,
+    `#241b10 ${Math.round(horizonY + 80)}px`,
+    "#150f08 100%)",
+  ].join(", ");
 
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -224,10 +237,8 @@ export const TreeCanvas = forwardRef<TreeCanvasHandle, TreeCanvasProps>(function
       onPointerMove={handlePointerMove}
       onPointerUp={endPointer}
       onPointerCancel={endPointer}
-      onPointerLeave={(e) => {
-        if (pointers.current.size === 0 && e.pointerType === "mouse") onSelect(null, null);
-      }}
       onWheel={handleWheel}
+      style={{ background: skyGroundBackground }}
     >
       <canvas
         ref={canvasRef}

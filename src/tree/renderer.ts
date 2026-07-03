@@ -4,12 +4,52 @@ import type { LeafCluster, Point, TreeLayout } from "./types";
 const COLORS = {
   wood: "#4a3222",
   root: "#3a2a1c",
-  stub: "#5c4530",
   leafOff: "#8a8a72",
   leafOn: "#4fae6b",
   leafOnHighlight: "#6fd98a",
   leafOffHighlight: "#a8a890",
 };
+
+type Rgb = [number, number, number];
+
+const WOOD_RGB: Rgb = [74, 50, 34];
+
+function hslToRgb(h: number, s: number, l: number): Rgb {
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    return l - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)));
+  };
+  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+}
+
+function lerpRgb(a: Rgb, b: Rgb, t: number): Rgb {
+  return [
+    Math.round(a[0] + (b[0] - a[0]) * t),
+    Math.round(a[1] + (b[1] - a[1]) * t),
+    Math.round(a[2] + (b[2] - a[2]) * t),
+  ];
+}
+
+function rgbString([r, g, b]: Rgb): string {
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+// Muted, dark per-branch hues. Golden-angle spacing keeps neighbouring
+// branch ids far apart on the wheel; low saturation + a blend toward the
+// trunk brown keeps everything wooden rather than neon.
+function branchRgb(branchId: number): Rgb {
+  const hue = (branchId * 137.5) % 360;
+  return lerpRgb(hslToRgb(hue, 0.34, 0.35), WOOD_RGB, 0.35);
+}
+
+function branchColor(branchId: number): string {
+  return rgbString(branchRgb(branchId));
+}
+
+function branchStubColor(branchId: number): string {
+  return rgbString(lerpRgb(branchRgb(branchId), [220, 210, 190], 0.18));
+}
 
 /** Bresenham line rasterized as a chain of square "brush" blocks — crisp, no anti-aliasing. */
 function drawPixelLine(
@@ -119,18 +159,54 @@ export function renderTree(
     drawLeafCluster(ctx, root.leaf, root.status, options.highlightedId === root.customId);
   }
 
-  drawTaperedPath(ctx, layout.trunk.path, layout.trunk.widths[0], layout.trunk.widths.at(-1)!, COLORS.wood);
+  drawTrunkGradient(ctx, layout);
 
   for (const branch of layout.branches) {
-    drawTaperedPath(ctx, branch.path, branch.baseWidth, branch.tipWidth, COLORS.wood);
+    drawTaperedPath(ctx, branch.path, branch.baseWidth, branch.tipWidth, branchColor(branch.branchId));
     for (const twig of branch.twigs) {
-      drawPixelLine(ctx, twig.stub[0], twig.stub[1], 2, COLORS.stub);
+      drawPixelLine(ctx, twig.stub[0], twig.stub[1], 2, branchStubColor(branch.branchId));
       const completed = Boolean(options.progress[twig.achievementId]);
       drawLeafCluster(ctx, twig.leaf, completed, options.highlightedId === twig.achievementId);
     }
   }
 
   ctx.restore();
+}
+
+/**
+ * Trunk painted segment-by-segment, blending between the hues of the branches
+ * attached at each height — the trunk "carries" every branch's colour up to it.
+ */
+function drawTrunkGradient(ctx: CanvasRenderingContext2D, layout: TreeLayout) {
+  const { trunk } = layout;
+  const stops = layout.branches
+    .map((b) => ({ t: b.attachT, rgb: branchRgb(b.branchId) }))
+    .sort((a, b) => a.t - b.t);
+
+  const colorAt = (t: number): Rgb => {
+    if (stops.length === 0) return WOOD_RGB;
+    if (t <= stops[0].t) {
+      // Below the first branch: fade from plain wood at the base up to its hue.
+      const k = stops[0].t <= 0 ? 1 : t / stops[0].t;
+      return lerpRgb(WOOD_RGB, stops[0].rgb, k);
+    }
+    for (let i = 0; i < stops.length - 1; i++) {
+      if (t <= stops[i + 1].t) {
+        const span = stops[i + 1].t - stops[i].t || 1;
+        return lerpRgb(stops[i].rgb, stops[i + 1].rgb, (t - stops[i].t) / span);
+      }
+    }
+    return stops[stops.length - 1].rgb;
+  };
+
+  const segments = trunk.path.length - 1;
+  for (let i = 0; i < segments; i++) {
+    const t = i / Math.max(1, segments - 1);
+    const width = trunk.widths[i];
+    // Blend halfway back toward wood so the trunk stays woody, just tinted.
+    const rgb = lerpRgb(colorAt(t), WOOD_RGB, 0.45);
+    drawPixelLine(ctx, trunk.path[i], trunk.path[i + 1], width, rgbString(rgb));
+  }
 }
 
 export interface HitTarget {

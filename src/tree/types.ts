@@ -22,6 +22,8 @@ export interface BranchLayout {
   branchId: number;
   title: string;
   path: Point[];
+  /** Arc-length fraction (0..1) along the trunk where this branch attaches — drives the trunk gradient. */
+  attachT: number;
   baseWidth: number;
   tipWidth: number;
   twigs: TwigLayout[];

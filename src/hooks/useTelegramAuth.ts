@@ -24,6 +24,16 @@ export function useTelegramAuth() {
       webApp?.expand();
 
       if (!webApp?.initData) {
+        // Local dev outside Telegram: fake an identity so the tree can be
+        // previewed. import.meta.env.DEV is compile-time false in production
+        // builds, so this branch is stripped from the deployed bundle.
+        if (import.meta.env.DEV) {
+          if (!cancelled) {
+            setIdentity({ telegramUserId: 1, firstName: "dev", username: "dev" });
+            setStatus("ready");
+          }
+          return;
+        }
         if (!cancelled) setStatus("not-telegram");
         return;
       }
