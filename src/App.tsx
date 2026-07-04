@@ -117,7 +117,6 @@ export default function App() {
         />
         {selection && selectedContent && (
           <Tooltip
-            anchor={selection.screen}
             title={selectedContent.title}
             subtitle={selectedContent.subtitle}
             description={selectedContent.description}

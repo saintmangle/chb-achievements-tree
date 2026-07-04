@@ -7,6 +7,8 @@ export interface LeafCluster {
   center: Point;
   blocks: Point[];
   radius: number;
+  /** If set, this decorative cluster belongs to one fruit and greens exactly when it's completed. */
+  ownerId?: string;
 }
 
 export interface TwigLayout {

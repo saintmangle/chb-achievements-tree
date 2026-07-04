@@ -410,6 +410,27 @@ export function buildTreeLayout(
     t.stub = [parent ? parent.leaf.center : t.stub[0], t.leaf.center];
   }
 
+  // A tuft of leaves hugging every fruit (built after fruits settle so it
+  // stays aligned). Each tuft is owned by its fruit and greens exactly when
+  // that achievement is completed — so leaves surround every plod and the
+  // green spreads right around the checked one.
+  for (const branch of branchLayouts) {
+    for (const twig of branch.twigs) {
+      const fr = mulberry32(hashString(`fruitfol:${twig.achievementId}`));
+      const ringCount = 6 + Math.floor(fr() * 3);
+      for (let k = 0; k < ringCount; k++) {
+        const a = (k / ringCount) * Math.PI * 2 + fr() * 0.8;
+        const r = 8 + fr() * 8;
+        const cluster = buildLeafCluster(
+          { x: twig.leaf.center.x + Math.cos(a) * r, y: twig.leaf.center.y + Math.sin(a) * r },
+          hashString(`fruitfol:${twig.achievementId}:${k}`),
+        );
+        cluster.ownerId = twig.achievementId;
+        branch.foliage.push(cluster);
+      }
+    }
+  }
+
   const ground = buildGroundRoots(trunk.path[0]);
   const groundRoots = ground.layouts;
   const rootLayouts: RootLayout[] = customAchievements.map((custom, i) =>

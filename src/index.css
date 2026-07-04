@@ -113,9 +113,13 @@ body {
   color: var(--text-dim);
 }
 
+/* The card is centered over the tree so it never gets clipped at the edges. */
 .tooltip-anchor {
   position: absolute;
-  transform: translate(-50%, -100%);
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   pointer-events: none;
   z-index: 10;
 }
@@ -123,13 +127,12 @@ body {
 .tooltip-card {
   pointer-events: auto;
   position: relative;
-  margin-bottom: 14px;
   background: var(--panel);
   border: 2px solid var(--accent-green);
   border-radius: 6px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   width: max-content;
-  max-width: 240px;
+  max-width: min(320px, 86vw);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
 }
 

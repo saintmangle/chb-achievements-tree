@@ -204,13 +204,17 @@ export const TreeCanvas = forwardRef<TreeCanvasHandle, TreeCanvasProps>(function
   // trunk base). Recomputed from the camera so the horizon pans and zooms with
   // the tree; the roots end up "buried" in the earth band.
   const horizonY = (0 - layout.bounds.minY) * camera.scale + camera.ty;
+  // Sky → a band of grass green at ground level → earth.
+  const grass = Math.max(12, Math.round(18 * camera.scale));
   const skyGroundBackground = [
     "linear-gradient(to bottom",
     "#2f6bab 0px",
     `#4f8ec7 ${Math.round(horizonY - 80)}px`,
-    `#66a3d6 ${Math.round(horizonY)}px`,
-    `#8a5526 ${Math.round(horizonY)}px`,
-    `#5c3818 ${Math.round(horizonY + 70)}px`,
+    `#8fbfe0 ${Math.round(horizonY - 6)}px`,
+    `#5ea23f ${Math.round(horizonY)}px`,
+    `#3f7a2a ${Math.round(horizonY + grass)}px`,
+    `#8a5526 ${Math.round(horizonY + grass)}px`,
+    `#5c3818 ${Math.round(horizonY + grass + 70)}px`,
     "#3a220f 100%)",
   ].join(", ");
 

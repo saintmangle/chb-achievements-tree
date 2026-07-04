@@ -21,7 +21,9 @@ const COLORS = {
 // the foliage around it green, so the tree greens up spot by spot.
 const FOLIAGE_CREAM = ["#a89f80", "#b5ad8e", "#9a9278"];
 const FOLIAGE_GREEN = ["#3f7a45", "#4c8a50", "#377040"];
-const GREEN_RADIUS = 38;
+// Filler foliage (not owned by a fruit) also greens when a completed fruit is
+// this close, so a green patch has no cream stragglers inside it.
+const GREEN_RADIUS = 60;
 
 type Rgb = [number, number, number];
 
@@ -263,22 +265,31 @@ export function renderTree(
   drawTrunkStripes(ctx, layout);
 
   // Pass 1 — the whole crown as a background layer. A foliage cluster turns
-  // green when a completed fruit is nearby, so each checked-off achievement
-  // greens its own patch of the crown.
+  // green when a completed fruit is nearby (a fully completed branch greens
+  // edge to edge). All cream clusters are painted first and all green ones
+  // after, so a green patch stays solid instead of getting speckled by cream
+  // neighbours drawn on top of it.
+  const creamClusters: Array<{ leaf: LeafCluster; color: string }> = [];
+  const greenClusters: Array<{ leaf: LeafCluster; color: string }> = [];
   for (const branch of layout.branches) {
     const completedCenters = branch.twigs
       .filter((t) => options.progress[t.achievementId])
       .map((t) => t.leaf.center);
-    // A fully completed branch turns green edge to edge — no cream stragglers.
     const branchDone = branch.twigs.length > 0 && completedCenters.length === branch.twigs.length;
     branch.foliage.forEach((leaf, i) => {
-      const green =
-        branchDone ||
-        completedCenters.some((c) => distSq(c, leaf.center) < GREEN_RADIUS * GREEN_RADIUS);
+      // A fruit's own tuft greens with that fruit; filler clusters green when
+      // any completed fruit is nearby (and always once the branch is done).
+      const green = leaf.ownerId
+        ? Boolean(options.progress[leaf.ownerId])
+        : branchDone ||
+          completedCenters.some((c) => distSq(c, leaf.center) < GREEN_RADIUS * GREEN_RADIUS);
       const palette = green ? FOLIAGE_GREEN : FOLIAGE_CREAM;
-      drawLeafCluster(ctx, leaf, palette[(branch.branchId * 7 + i) % palette.length]);
+      const entry = { leaf, color: palette[(branch.branchId * 7 + i) % palette.length] };
+      (green ? greenClusters : creamClusters).push(entry);
     });
   }
+  for (const { leaf, color } of creamClusters) drawLeafCluster(ctx, leaf, color);
+  for (const { leaf, color } of greenClusters) drawLeafCluster(ctx, leaf, color);
 
   // Pass 2 — branches and fruits on top, so all 14 directions and every
   // clickable fruit stay readable against the crown.

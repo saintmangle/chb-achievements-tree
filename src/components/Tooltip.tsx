@@ -1,7 +1,4 @@
-import type { Point } from "../tree/types";
-
 interface TooltipProps {
-  anchor: Point;
   title: string;
   subtitle?: string;
   description?: string;
@@ -11,14 +8,9 @@ interface TooltipProps {
   onClose: () => void;
 }
 
-export function Tooltip({ anchor, title, subtitle, description, completed, onToggle, onDelete, onClose }: TooltipProps) {
-  const style = {
-    left: Math.round(anchor.x),
-    top: Math.round(anchor.y),
-  };
-
+export function Tooltip({ title, subtitle, description, completed, onToggle, onDelete, onClose }: TooltipProps) {
   return (
-    <div className="tooltip-anchor" style={style}>
+    <div className="tooltip-anchor">
       <div className="tooltip-card">
         <button className="tooltip-close" onClick={onClose} aria-label="Закрыть">
           ×
