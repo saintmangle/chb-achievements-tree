@@ -23,7 +23,7 @@ interface TreeCanvasProps {
 const MAX_SCALE = 6;
 const TAP_MOVE_THRESHOLD = 8;
 const TAP_MAX_DURATION = 500;
-const HIT_RADIUS_SCREEN_PX = 10;
+const HIT_RADIUS_SCREEN_PX = 16;
 
 function dist(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -218,30 +218,40 @@ export const TreeCanvas = forwardRef<TreeCanvasHandle, TreeCanvasProps>(function
     "#3a220f 100%)",
   ].join(", ");
 
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const cursor = toContainerPoint(e.clientX, e.clientY);
-    const factor = Math.exp(-e.deltaY * 0.0015);
-    setCamera((c) => {
-      const newScale = clamp(c.scale * factor, minScaleRef.current, MAX_SCALE);
-      const worldAtCursor = { x: (cursor.x - c.tx) / c.scale, y: (cursor.y - c.ty) / c.scale };
-      return {
-        scale: newScale,
-        tx: cursor.x - worldAtCursor.x * newScale,
-        ty: cursor.y - worldAtCursor.y * newScale,
-      };
-    });
-  };
+  // React registers onWheel as a passive listener, where preventDefault() is
+  // ignored (the browser would still ctrl+wheel-zoom the page). A manual
+  // non-passive listener keeps the wheel gesture on the tree only.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const cursor = toContainerPoint(e.clientX, e.clientY);
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      setCamera((c) => {
+        const newScale = clamp(c.scale * factor, minScaleRef.current, MAX_SCALE);
+        const worldAtCursor = { x: (cursor.x - c.tx) / c.scale, y: (cursor.y - c.ty) / c.scale };
+        return {
+          scale: newScale,
+          tx: cursor.x - worldAtCursor.x * newScale,
+          ty: cursor.y - worldAtCursor.y * newScale,
+        };
+      });
+    };
+    container.addEventListener("wheel", handleWheel, { passive: false });
+    return () => container.removeEventListener("wheel", handleWheel);
+  }, [toContainerPoint]);
 
   return (
     <div
       ref={containerRef}
       className="tree-viewport"
+      role="img"
+      aria-label="Пиксельное дерево достижений. Для клавиатуры и скринридера есть текстовый список достижений."
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={endPointer}
       onPointerCancel={endPointer}
-      onWheel={handleWheel}
       style={{ background: skyGroundBackground }}
     >
       <canvas

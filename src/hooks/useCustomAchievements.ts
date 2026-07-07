@@ -5,15 +5,20 @@ import type { CustomAchievement } from "../types";
 export function useCustomAchievements(telegramUserId: number | null) {
   const [items, setItems] = useState<CustomAchievement[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     if (!telegramUserId) return;
-    const { data, error } = await supabase
+    const { data, error: loadError } = await supabase
       .from("user_custom_achievements")
       .select("*")
       .eq("telegram_user_id", telegramUserId)
       .order("created_at", { ascending: true });
-    if (!error && data) setItems(data as CustomAchievement[]);
+    if (!loadError && data) {
+      setItems(data as CustomAchievement[]);
+    } else {
+      setError("Не удалось загрузить свои достижения — проверь интернет и открой приложение заново.");
+    }
     setLoaded(true);
   }, [telegramUserId]);
 
@@ -21,19 +26,22 @@ export function useCustomAchievements(telegramUserId: number | null) {
     reload();
   }, [reload]);
 
+  const clearError = useCallback(() => setError(null), []);
+
+  /** Returns true when the achievement was saved; the form keeps the text on failure. */
   const addCustom = useCallback(
-    async (text: string) => {
-      if (!telegramUserId) return;
+    async (text: string): Promise<boolean> => {
+      if (!telegramUserId) return false;
       const trimmed = text.trim();
-      if (!trimmed) return;
-      const { data, error } = await supabase
+      if (!trimmed) return false;
+      const { data, error: insertError } = await supabase
         .from("user_custom_achievements")
         .insert({ telegram_user_id: telegramUserId, text: trimmed })
         .select()
         .single();
-      if (!error && data) {
-        setItems((prev) => [...prev, data as CustomAchievement]);
-      }
+      if (insertError || !data) return false;
+      setItems((prev) => [...prev, data as CustomAchievement]);
+      return true;
     },
     [telegramUserId],
   );
@@ -41,8 +49,14 @@ export function useCustomAchievements(telegramUserId: number | null) {
   const removeCustom = useCallback(
     async (id: string) => {
       setItems((prev) => prev.filter((item) => item.id !== id));
-      const { error } = await supabase.from("user_custom_achievements").delete().eq("id", id);
-      if (error) reload();
+      const { error: deleteError } = await supabase
+        .from("user_custom_achievements")
+        .delete()
+        .eq("id", id);
+      if (deleteError) {
+        setError("Не получилось удалить — попробуй ещё раз.");
+        reload();
+      }
     },
     [reload],
   );
@@ -56,11 +70,15 @@ export function useCustomAchievements(telegramUserId: number | null) {
         return { ...item, status: nextStatus };
       }),
     );
-    const { error } = await supabase.from("user_custom_achievements").update({ status: nextStatus }).eq("id", id);
-    if (error) {
+    const { error: updateError } = await supabase
+      .from("user_custom_achievements")
+      .update({ status: nextStatus })
+      .eq("id", id);
+    if (updateError) {
       setItems((prev) => prev.map((item) => (item.id === id ? { ...item, status: !nextStatus } : item)));
+      setError("Не получилось сохранить отметку — попробуй ещё раз.");
     }
   }, []);
 
-  return { items, loaded, addCustom, toggleCustom, removeCustom };
+  return { items, loaded, addCustom, toggleCustom, removeCustom, error, clearError };
 }

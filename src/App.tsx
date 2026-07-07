@@ -21,16 +21,31 @@ interface Selection {
   screen: Point;
 }
 
+// Grouped once for the screen-reader / keyboard list; the data never changes.
+const achievementsByBranch = new Map<number, typeof achievements>();
+for (const a of achievements) {
+  const list = achievementsByBranch.get(a.branch_id) ?? [];
+  list.push(a);
+  achievementsByBranch.set(a.branch_id, list);
+}
+
 export default function App() {
   const { status, identity, error } = useTelegramAuth();
   const telegramUserId = identity?.telegramUserId ?? null;
 
-  const { progress, toggleAchievement } = useProgress(telegramUserId);
+  const {
+    progress,
+    toggleAchievement,
+    error: progressError,
+    clearError: clearProgressError,
+  } = useProgress(telegramUserId);
   const {
     items: customAchievements,
     addCustom,
     toggleCustom,
     removeCustom,
+    error: customError,
+    clearError: clearCustomError,
   } = useCustomAchievements(telegramUserId);
 
   const layout = useMemo(
@@ -89,10 +104,16 @@ export default function App() {
     };
   })();
 
+  const notice = progressError ?? customError;
+  const dismissNotice = () => {
+    clearProgressError();
+    clearCustomError();
+  };
+
   return (
     <div className="app">
       <header className="app-header">
-        <div className="app-title">Ачивки в реальной жизни</div>
+        <h1 className="app-title">Ачивки в реальной жизни</h1>
         <div className="app-progress">
           {completedCount} / {totalCount}
         </div>
@@ -126,6 +147,65 @@ export default function App() {
             onClose={() => setSelection(null)}
           />
         )}
+        {notice && (
+          <div className="notice" role="alert">
+            <span>{notice}</span>
+            <button className="notice-close" onClick={dismissNotice} aria-label="Закрыть">
+              ×
+            </button>
+          </div>
+        )}
+        {/* Text twin of the canvas tree: invisible until reached with Tab or a
+            screen reader, then it opens as a full overlay list. */}
+        <section className="a11y-list" aria-label="Достижения текстовым списком">
+          <p>Текстовая версия дерева. Отмечай достижения чекбоксами.</p>
+          {branches.map((b) => {
+            const list = achievementsByBranch.get(b.id);
+            if (!list) return null;
+            return (
+              <div key={b.id}>
+                <h2>{b.title}</h2>
+                <ul>
+                  {list.map((a) => (
+                    <li key={a.id}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(progress[a.id])}
+                          onChange={() => toggleAchievement(a.id)}
+                        />
+                        <span>{a.title}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+          {customAchievements.length > 0 && (
+            <div>
+              <h2>свои достижения</h2>
+              <ul>
+                {customAchievements.map((c) => (
+                  <li key={c.id}>
+                    <label>
+                      <input type="checkbox" checked={c.status} onChange={() => toggleCustom(c.id)} />
+                      <span>{c.text}</span>
+                    </label>
+                    <button
+                      className="a11y-delete"
+                      onClick={() => {
+                        if (window.confirm("Удалить это достижение навсегда?")) removeCustom(c.id);
+                      }}
+                    >
+                      удалить
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
       </div>
 
       <footer className="app-footer">

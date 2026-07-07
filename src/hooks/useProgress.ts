@@ -5,6 +5,7 @@ import type { ProgressMap } from "../types";
 export function useProgress(telegramUserId: number | null) {
   const [progress, setProgress] = useState<ProgressMap>({});
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!telegramUserId) return;
@@ -14,12 +15,14 @@ export function useProgress(telegramUserId: number | null) {
       .from("user_progress")
       .select("achievement_id")
       .eq("telegram_user_id", telegramUserId)
-      .then(({ data, error }) => {
+      .then(({ data, error: loadError }) => {
         if (cancelled) return;
-        if (!error && data) {
+        if (!loadError && data) {
           const map: ProgressMap = {};
           for (const row of data) map[row.achievement_id] = true;
           setProgress(map);
+        } else {
+          setError("Не удалось загрузить прогресс — проверь интернет и открой приложение заново.");
         }
         setLoaded(true);
       });
@@ -28,6 +31,8 @@ export function useProgress(telegramUserId: number | null) {
       cancelled = true;
     };
   }, [telegramUserId]);
+
+  const clearError = useCallback(() => setError(null), []);
 
   const toggleAchievement = useCallback(
     async (achievementId: string) => {
@@ -42,27 +47,31 @@ export function useProgress(telegramUserId: number | null) {
       });
 
       if (wasDone) {
-        const { error } = await supabase
+        const { error: deleteError } = await supabase
           .from("user_progress")
           .delete()
           .eq("telegram_user_id", telegramUserId)
           .eq("achievement_id", achievementId);
-        if (error) setProgress((prev) => ({ ...prev, [achievementId]: true }));
+        if (deleteError) {
+          setProgress((prev) => ({ ...prev, [achievementId]: true }));
+          setError("Не получилось сохранить отметку — попробуй ещё раз.");
+        }
       } else {
-        const { error } = await supabase
+        const { error: insertError } = await supabase
           .from("user_progress")
           .insert({ telegram_user_id: telegramUserId, achievement_id: achievementId });
-        if (error) {
+        if (insertError) {
           setProgress((prev) => {
             const next = { ...prev };
             delete next[achievementId];
             return next;
           });
+          setError("Не получилось сохранить отметку — попробуй ещё раз.");
         }
       }
     },
     [telegramUserId, progress],
   );
 
-  return { progress, loaded, toggleAchievement };
+  return { progress, loaded, toggleAchievement, error, clearError };
 }
