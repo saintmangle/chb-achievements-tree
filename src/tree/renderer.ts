@@ -1,4 +1,5 @@
 import type { ProgressMap } from "../types";
+import { mulberry32 } from "./prng";
 import type { LeafCluster, Point, TreeLayout } from "./types";
 
 // Everything is rasterized onto a fixed square grid of PIXEL×PIXEL world
@@ -7,8 +8,8 @@ const PIXEL = 3;
 
 const COLORS = {
   wood: "#4a3222",
-  // Roots are the same wood as the trunk — the tree reads as one piece.
-  root: "#4a3222",
+  // Dark halo painted under every branch so it stays readable on the crown.
+  branchUnderlay: "#2b1c10",
   fruitOff: "#f2ebcd",
   fruitOffOutline: "#3a2a1a",
   fruitOn: "#57cf7c",
@@ -18,12 +19,43 @@ const COLORS = {
 };
 
 // The crown starts cream-white; completing an achievement turns its fruit and
-// the foliage around it green, so the tree greens up spot by spot.
-const FOLIAGE_CREAM = ["#a89f80", "#b5ad8e", "#9a9278"];
-const FOLIAGE_GREEN = ["#3f7a45", "#4c8a50", "#377040"];
+// the foliage around it green, so the tree greens up spot by spot. Each state
+// is a lit/base/shaded triple (top of a blob catches light, bottom falls into
+// shadow) plus a deep drop-shadow tone that gives the canopy its depth.
+interface FoliageShades {
+  light: string;
+  base: string;
+  dark: string;
+  shadow: string;
+}
+
+const FOLIAGE_CREAM: FoliageShades = {
+  light: "#c9c1a2",
+  base: "#a89f80",
+  dark: "#867e63",
+  shadow: "#57503d",
+};
+const FOLIAGE_GREEN: FoliageShades = {
+  light: "#6fae5e",
+  base: "#4c8a50",
+  dark: "#35663c",
+  shadow: "#1d3d26",
+};
 // Filler foliage (not owned by a fruit) also greens when a completed fruit is
 // this close, so a green patch has no cream stragglers inside it.
-const GREEN_RADIUS = 60;
+const GREEN_RADIUS = 85;
+
+// Background palette: banded sky with clouds, a grass lip at the ground line,
+// then earth that darkens with depth, speckled and studded with stones.
+const SKY_BANDS = ["#2f6bab", "#3d7ab8", "#4f8ec7", "#69a5d6", "#84bce2", "#9ccbe9"];
+const CLOUD_MAIN = "#f4f9fc";
+const CLOUD_SHADE = "#c9dcea";
+const GRASS_BASE = "#5ea23f";
+const GRASS_SHADES = ["#4c8f33", "#71b34c", "#3f7a2a"];
+const EARTH_BANDS = ["#8a5526", "#774822", "#653a1a", "#523015", "#3f240f"];
+const STONE = { light: "#8f8d84", mid: "#75736a", dark: "#5c5a52" };
+// World grass thickness in cells; TreeCanvas mirrors it for the CSS backdrop.
+export const GRASS_DEPTH_CELLS = 5;
 
 type Rgb = [number, number, number];
 
@@ -68,6 +100,13 @@ function branchStubColor(branchId: number): string {
 
 function cellOf(v: number): number {
   return Math.round(v / PIXEL);
+}
+
+/** Deterministic per-cell noise in [0, 1) — stable across redraws. */
+function cellNoise(x: number, y: number): number {
+  let h = (x * 374761393 + y * 668265263) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
 /** Bresenham line in grid-cell space; every stamp is an axis-aligned block of whole cells. */
@@ -121,13 +160,52 @@ function drawTaperedPath(
   }
 }
 
-/** Every leaf block is exactly one grid cell — same size everywhere. */
-function drawLeafCluster(ctx: CanvasRenderingContext2D, leaf: LeafCluster, color: string) {
+/**
+ * A leaf blob shaded by height: the top rows catch light, the bottom rows
+ * fall into shade, with a checker dither at the seams so the transition
+ * stays pixel-art rather than banding.
+ */
+function drawLeafCluster(ctx: CanvasRenderingContext2D, leaf: LeafCluster, shades: FoliageShades) {
+  const cy0 = cellOf(leaf.center.y);
+  let minDy = 0;
+  let maxDy = 0;
+  for (const block of leaf.blocks) {
+    const d = cellOf(block.y) - cy0;
+    if (d < minDy) minDy = d;
+    if (d > maxDy) maxDy = d;
+  }
+  const span = Math.max(1, maxDy - minDy);
+
+  const light: Point[] = [];
+  const base: Point[] = [];
+  const dark: Point[] = [];
+  const bucketFor = (cx: number, cy: number): Point[] => {
+    const t = (cy - cy0 - minDy) / span; // 0 = top of the blob, 1 = bottom
+    const dither = ((cx + cy) & 1) === 0 ? 0.06 : -0.06;
+    const v = t + dither;
+    return v < 0.3 ? light : v > 0.72 ? dark : base;
+  };
+  for (const block of leaf.blocks) {
+    bucketFor(cellOf(block.x), cellOf(block.y)).push(block);
+  }
+  bucketFor(cellOf(leaf.center.x), cy0).push(leaf.center);
+
+  const paint = (blocks: Point[], color: string) => {
+    if (blocks.length === 0) return;
+    ctx.fillStyle = color;
+    for (const b of blocks) ctx.fillRect(cellOf(b.x) * PIXEL, cellOf(b.y) * PIXEL, PIXEL, PIXEL);
+  };
+  paint(light, shades.light);
+  paint(base, shades.base);
+  paint(dark, shades.dark);
+}
+
+/** One-cell drop shadow under a blob — overlapping shadows carve the dark clefts between canopy lumps. */
+function drawLeafShadow(ctx: CanvasRenderingContext2D, leaf: LeafCluster, color: string) {
   ctx.fillStyle = color;
   for (const block of leaf.blocks) {
-    ctx.fillRect(cellOf(block.x) * PIXEL, cellOf(block.y) * PIXEL, PIXEL, PIXEL);
+    ctx.fillRect((cellOf(block.x) + 1) * PIXEL, (cellOf(block.y) + 1) * PIXEL, PIXEL, PIXEL);
   }
-  ctx.fillRect(cellOf(leaf.center.x) * PIXEL, cellOf(leaf.center.y) * PIXEL, PIXEL, PIXEL);
 }
 
 // Achievements are drawn as "fruits": a solid 3×3-cell disc with a dark
@@ -215,6 +293,128 @@ function drawTrunkStripes(ctx: CanvasRenderingContext2D, layout: TreeLayout) {
   }
 }
 
+/**
+ * The scene behind the tree, painted once per layout and cached: banded sky
+ * with pixel clouds, a grass lip at the ground line (blades poking up), and
+ * earth that darkens with depth, speckled and studded with shaded stones.
+ * Deterministic, so it never flickers between redraws.
+ */
+function buildBackground(layout: TreeLayout, width: number, height: number): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d")!;
+  const { bounds } = layout;
+  ctx.imageSmoothingEnabled = false;
+  ctx.translate(Math.round(-bounds.minX), Math.round(-bounds.minY));
+
+  const xFrom = cellOf(bounds.minX) - 1;
+  const xTo = cellOf(bounds.maxX) + 1;
+  const yFrom = cellOf(bounds.minY) - 1;
+  const yTo = cellOf(bounds.maxY) + 1;
+  const yGround = 0; // the trunk base sits on the ground line (world y = 0)
+
+  const fill = (cx: number, cy: number, color: string) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(cx * PIXEL, cy * PIXEL, PIXEL, PIXEL);
+  };
+
+  // Texture fades out near the canvas edges, so the painted scene blends into
+  // the flat CSS backdrop that continues beyond the canvas.
+  const edgeFade = (cx: number, cy: number): number => {
+    const d = Math.min(cx - xFrom, xTo - cx, cy - yFrom, yTo - cy);
+    return Math.min(1, Math.max(0, d / 14));
+  };
+
+  // Sky: bands lightening toward the horizon, seams broken by dither noise.
+  const skyRows = Math.max(1, yGround - yFrom);
+  for (let cy = yFrom; cy < yGround; cy++) {
+    const t = (cy - yFrom) / skyRows;
+    for (let cx = xFrom; cx <= xTo; cx++) {
+      const v = t * (SKY_BANDS.length - 1) + (cellNoise(cx, cy) - 0.5) * 0.6 * edgeFade(cx, cy);
+      const idx = Math.min(SKY_BANDS.length - 1, Math.max(0, Math.round(v)));
+      fill(cx, cy, SKY_BANDS[idx]);
+    }
+  }
+
+  // Clouds: flat-bottomed puffs with a shaded underside, kept off the edges.
+  const rng = mulberry32(20260707);
+  const cloudCount = Math.max(6, Math.round(((xTo - xFrom) * skyRows) / 22000));
+  for (let i = 0; i < cloudCount; i++) {
+    const cx = xFrom + 22 + Math.floor(rng() * Math.max(1, xTo - xFrom - 44));
+    const cy = yFrom + 10 + Math.floor(rng() * Math.max(1, skyRows * 0.72));
+    const w = 14 + Math.floor(rng() * 24);
+    const h = 4 + Math.floor(rng() * 4);
+    const half = Math.floor(w / 2);
+    for (let dx = -half; dx <= half; dx++) {
+      const rel = dx / (half || 1);
+      const lump = 0.7 + cellNoise(cx + dx, cy) * 0.5;
+      const col = Math.max(1, Math.round(h * Math.sqrt(Math.max(0, 1 - rel * rel)) * lump));
+      for (let k = 0; k < col; k++) {
+        fill(cx + dx, cy - k, k === 0 ? CLOUD_SHADE : CLOUD_MAIN);
+      }
+    }
+  }
+
+  // Grass lip at the ground line, with blades poking into the sky.
+  for (let cy = yGround; cy < yGround + GRASS_DEPTH_CELLS; cy++) {
+    for (let cx = xFrom; cx <= xTo; cx++) {
+      const fade = edgeFade(cx, cy);
+      const n = cellNoise(cx, cy);
+      const lastRow = cy === yGround + GRASS_DEPTH_CELLS - 1;
+      const color =
+        n < 0.2 * fade
+          ? GRASS_SHADES[0]
+          : n > 1 - 0.15 * fade
+            ? GRASS_SHADES[1]
+            : lastRow && n > 0.5 && fade === 1
+              ? GRASS_SHADES[2]
+              : GRASS_BASE;
+      fill(cx, cy, color);
+    }
+  }
+  for (let cx = xFrom; cx <= xTo; cx++) {
+    if (cellNoise(cx, 911) < 0.22 * edgeFade(cx, yGround)) fill(cx, yGround - 1, GRASS_BASE);
+  }
+
+  // Earth: darkens with depth; soft speckles and pebbles break the monotony.
+  const earthFrom = yGround + GRASS_DEPTH_CELLS;
+  const earthRows = Math.max(1, yTo - earthFrom);
+  for (let cy = earthFrom; cy <= yTo; cy++) {
+    const t = (cy - earthFrom) / earthRows;
+    for (let cx = xFrom; cx <= xTo; cx++) {
+      const fade = edgeFade(cx, cy);
+      const n = cellNoise(cx, cy);
+      const v = t * (EARTH_BANDS.length - 1) + (n - 0.5) * 0.9 * fade;
+      const idx = Math.min(EARTH_BANDS.length - 1, Math.max(0, Math.round(v)));
+      let color = EARTH_BANDS[idx];
+      // Speckles are just the neighbouring depth bands, so they stay subtle.
+      if (n < 0.05 * fade) color = EARTH_BANDS[Math.min(EARTH_BANDS.length - 1, idx + 1)];
+      else if (n > 1 - 0.05 * fade) color = EARTH_BANDS[Math.max(0, idx - 1)];
+      fill(cx, cy, color);
+    }
+  }
+  const stoneCount = Math.max(10, Math.round(((xTo - xFrom) * earthRows) / 3500));
+  for (let i = 0; i < stoneCount; i++) {
+    const sx = xFrom + 8 + Math.floor(rng() * Math.max(1, xTo - xFrom - 16));
+    const sy = earthFrom + 3 + Math.floor(rng() * Math.max(1, earthRows - 8));
+    const sw = 2 + Math.floor(rng() * 3);
+    const sh = 1 + Math.floor(rng() * 2);
+    for (let dx = 0; dx < sw; dx++) {
+      for (let dy = 0; dy < sh; dy++) {
+        // Clip the corners so wider pebbles read as rounded.
+        if ((dx === 0 || dx === sw - 1) && (dy === 0 || dy === sh - 1) && sw > 2) continue;
+        const color = dy === 0 && dx < sw - 1 ? STONE.light : dy === sh - 1 || dx === sw - 1 ? STONE.dark : STONE.mid;
+        fill(sx + dx, sy + dy, color);
+      }
+    }
+  }
+
+  return canvas;
+}
+
+let backgroundCache: { layout: TreeLayout; canvas: HTMLCanvasElement } | null = null;
+
 export interface RenderOptions {
   progress: ProgressMap;
   highlightedId: string | null;
@@ -248,6 +448,12 @@ export function renderTree(
 
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, width, height);
+
+  if (!backgroundCache || backgroundCache.layout !== layout) {
+    backgroundCache = { layout, canvas: buildBackground(layout, width, height) };
+  }
+  ctx.drawImage(backgroundCache.canvas, 0, 0);
+
   ctx.save();
   // Integer translation keeps the fat-pixel grid aligned to canvas pixels.
   ctx.translate(Math.round(-bounds.minX), Math.round(-bounds.minY));
@@ -268,32 +474,41 @@ export function renderTree(
   // green when a completed fruit is nearby (a fully completed branch greens
   // edge to edge). All cream clusters are painted first and all green ones
   // after, so a green patch stays solid instead of getting speckled by cream
-  // neighbours drawn on top of it.
-  const creamClusters: Array<{ leaf: LeafCluster; color: string }> = [];
-  const greenClusters: Array<{ leaf: LeafCluster; color: string }> = [];
+  // neighbours drawn on top of it. Each group gets a drop-shadow pass first —
+  // the overlapping shadows carve the dark clefts that make the canopy lumpy.
+  const creamClusters: LeafCluster[] = [];
+  const greenClusters: LeafCluster[] = [];
   for (const branch of layout.branches) {
     const completedCenters = branch.twigs
       .filter((t) => options.progress[t.achievementId])
       .map((t) => t.leaf.center);
     const branchDone = branch.twigs.length > 0 && completedCenters.length === branch.twigs.length;
-    branch.foliage.forEach((leaf, i) => {
+    for (const leaf of branch.foliage) {
       // A fruit's own tuft greens with that fruit; filler clusters green when
       // any completed fruit is nearby (and always once the branch is done).
       const green = leaf.ownerId
         ? Boolean(options.progress[leaf.ownerId])
         : branchDone ||
           completedCenters.some((c) => distSq(c, leaf.center) < GREEN_RADIUS * GREEN_RADIUS);
-      const palette = green ? FOLIAGE_GREEN : FOLIAGE_CREAM;
-      const entry = { leaf, color: palette[(branch.branchId * 7 + i) % palette.length] };
-      (green ? greenClusters : creamClusters).push(entry);
-    });
+      (green ? greenClusters : creamClusters).push(leaf);
+    }
   }
-  for (const { leaf, color } of creamClusters) drawLeafCluster(ctx, leaf, color);
-  for (const { leaf, color } of greenClusters) drawLeafCluster(ctx, leaf, color);
+  for (const leaf of creamClusters) drawLeafShadow(ctx, leaf, FOLIAGE_CREAM.shadow);
+  for (const leaf of creamClusters) drawLeafCluster(ctx, leaf, FOLIAGE_CREAM);
+  for (const leaf of greenClusters) drawLeafShadow(ctx, leaf, FOLIAGE_GREEN.shadow);
+  for (const leaf of greenClusters) drawLeafCluster(ctx, leaf, FOLIAGE_GREEN);
 
   // Pass 2 — branches and fruits on top, so all 14 directions and every
-  // clickable fruit stay readable against the crown.
+  // clickable fruit stay readable against the crown. Each branch is haloed
+  // with dark wood first so it separates cleanly from the foliage behind it.
   for (const branch of layout.branches) {
+    drawTaperedPath(
+      ctx,
+      branch.path,
+      branch.baseWidth + PIXEL * 2,
+      branch.tipWidth + PIXEL * 2,
+      COLORS.branchUnderlay,
+    );
     drawTaperedPath(ctx, branch.path, branch.baseWidth, branch.tipWidth, branchColor(branch.branchId));
     for (const twig of branch.twigs) {
       drawPixelLine(ctx, twig.stub[0], twig.stub[1], PIXEL, branchStubColor(branch.branchId));

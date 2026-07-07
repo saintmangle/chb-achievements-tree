@@ -14,35 +14,40 @@ import type {
 
 // The world is deliberately roomy relative to the 3-unit pixel grid — more
 // spacing between elements means the fat pixels don't pile onto each other.
-const TRUNK_HEIGHT = 360;
-const TRUNK_SEGMENTS = 30;
-const TRUNK_BASE_WIDTH = 33;
-const TRUNK_TOP_WIDTH = 18;
+const TRUNK_HEIGHT = 520;
+const TRUNK_SEGMENTS = 40;
+const TRUNK_BASE_WIDTH = 44;
+const TRUNK_TOP_WIDTH = 24;
+// The trunk flares toward the ground like the reference art.
+const TRUNK_FLARE = 1.35;
 
 // Branches attach along the trunk and fan out without crossing: on each side
 // the lowest branch grows almost horizontally and every branch above it grows
 // steeper, so each one stays inside its own angular sector.
-const BRANCH_ATTACH_FROM = 0.3;
-const BRANCH_ATTACH_TO = 0.96;
+const BRANCH_ATTACH_FROM = 0.42;
+const BRANCH_ATTACH_TO = 0.97;
 const BRANCH_ANGLE_FROM = (9 * Math.PI) / 180;
-const BRANCH_ANGLE_TO = (76 * Math.PI) / 180;
-const BRANCH_BASE_LENGTH = 60;
-const BRANCH_LENGTH_PER_TWIG = 12;
-const BRANCH_SEGMENT_LENGTH = 11;
+const BRANCH_ANGLE_TO = (74 * Math.PI) / 180;
+const BRANCH_BASE_LENGTH = 90;
+const BRANCH_LENGTH_PER_TWIG = 16;
+const BRANCH_SEGMENT_LENGTH = 13;
 const BRANCH_JITTER = 0.18;
+// Branches arc upward as they grow (0 = straight, 1 = fully turned up by the
+// tip) — the low limbs curl like the reference trees and the crown gets round.
+const BRANCH_CURL = 0.45;
 
 // Chained ("сюжетные") achievements grow outward from their parent leaf,
 // one step per link, so a requires-chain reads as one long twig.
-const CHAIN_STEP = 28;
+const CHAIN_STEP = 36;
 const CHAIN_FORK_SPREAD = 0.9;
 
 // Fruits are pushed apart until no two are closer than this (fruit is ~15
 // world units across, so this guarantees a clear gap of several pixels).
-const MIN_FRUIT_DIST = 26;
+const MIN_FRUIT_DIST = 36;
 
 // Decorative foliage keeps this distance from achievement "fruits" so the
 // clickable spots stay visually clean.
-const FOLIAGE_CLEARANCE = 13;
+const FOLIAGE_CLEARANCE = 18;
 
 const ROOT_SEGMENT_LENGTH = 12;
 
@@ -60,7 +65,8 @@ function buildTrunk(): TrunkLayout {
     x += (rng() - 0.5) * 2 * (1 - t * 0.3);
     x *= 0.9;
     path.push({ x, y: -t * TRUNK_HEIGHT });
-    widths.push(TRUNK_BASE_WIDTH + (TRUNK_TOP_WIDTH - TRUNK_BASE_WIDTH) * t);
+    const flare = 1 + (TRUNK_FLARE - 1) * Math.max(0, 1 - t / 0.14);
+    widths.push((TRUNK_BASE_WIDTH + (TRUNK_TOP_WIDTH - TRUNK_BASE_WIDTH) * t) * flare);
   }
   return { path, widths };
 }
@@ -78,15 +84,18 @@ function buildWalkPath(
   segmentLength: number,
   seed: number,
   jitter: number,
+  curlToward = baseDir,
+  curl = 0,
 ): Point[] {
   const rng = mulberry32(seed);
   const path: Point[] = [start];
   let wander = 0;
   let cur = start;
   for (let i = 0; i < segmentCount; i++) {
+    const t = segmentCount > 1 ? i / (segmentCount - 1) : 0;
     wander += (rng() - 0.5) * jitter;
     wander *= 0.9;
-    const dir = baseDir + wander;
+    const dir = blendAngle(baseDir, curlToward, t * curl) + wander;
     const next: Point = {
       x: cur.x + Math.cos(dir) * segmentLength,
       y: cur.y + Math.sin(dir) * segmentLength,
@@ -138,18 +147,18 @@ const LEAF_BLOCK = 3;
 /** Big rounded blob with slightly ragged edges — overlapping blobs merge into a full canopy. */
 function buildLeafCluster(center: Point, seed: number): LeafCluster {
   const rng = mulberry32(seed);
-  const radiusCells = 3 + Math.floor(rng() * 3);
+  const radiusCells = 5 + Math.floor(rng() * 3);
   const blocks: Point[] = [];
   for (let dx = -radiusCells; dx <= radiusCells; dx++) {
     for (let dy = -radiusCells; dy <= radiusCells; dy++) {
       const d2 = dx * dx + dy * dy;
       if (d2 > radiusCells * radiusCells + 0.5) continue;
-      // Full core, ragged rim.
-      if (d2 > (radiusCells - 1) * (radiusCells - 1) && rng() < 0.4) continue;
+      // Full core, slightly ragged rim (too ragged reads as static noise).
+      if (d2 > (radiusCells - 1) * (radiusCells - 1) && rng() < 0.3) continue;
       blocks.push({ x: center.x + dx * LEAF_BLOCK, y: center.y + dy * LEAF_BLOCK });
     }
   }
-  return { center, blocks, radius: 12 };
+  return { center, blocks, radius: 16 };
 }
 
 function buildBranch(
@@ -176,7 +185,16 @@ function buildBranch(
 
   const targetLength = BRANCH_BASE_LENGTH + starts.length * BRANCH_LENGTH_PER_TWIG;
   const segmentCount = Math.max(5, Math.round(targetLength / BRANCH_SEGMENT_LENGTH));
-  const path = buildWalkPath(attach, dirAngle, segmentCount, BRANCH_SEGMENT_LENGTH, seed, BRANCH_JITTER);
+  const path = buildWalkPath(
+    attach,
+    dirAngle,
+    segmentCount,
+    BRANCH_SEGMENT_LENGTH,
+    seed,
+    BRANCH_JITTER,
+    -Math.PI / 2,
+    BRANCH_CURL,
+  );
 
   const twigs: TwigLayout[] = [];
 
@@ -212,7 +230,7 @@ function buildBranch(
     const t = (i + 1) / (starts.length + 1);
     const { point, normal } = pointAtArcLength(path, t);
     const twigSide = i % 2 === 0 ? 1 : -1;
-    const offset = 13 + (i % 3) * 4;
+    const offset = 18 + (i % 3) * 5;
     const leafCenter: Point = {
       x: point.x + normal.x * offset * twigSide,
       y: point.y + normal.y * offset * twigSide,
@@ -222,15 +240,16 @@ function buildBranch(
 
   // Dense crown: lots of clusters on both sides of the branch at varying
   // distances plus a thick cap past the tip. Drawn as a background layer —
-  // branches and fruits are painted on top of it.
+  // branches and fruits are painted on top of it. (Fruit clearance is applied
+  // later, once the fruits have settled into their final positions.)
   const foliage: LeafCluster[] = [];
   const frng = mulberry32(hashString(`foliage:${branch.id}`));
-  const clusterCount = Math.max(28, Math.round(segmentCount * 5));
+  const clusterCount = Math.max(32, Math.round(segmentCount * 5));
   for (let c = 0; c < clusterCount; c++) {
-    const t = 0.15 + 0.85 * (c / Math.max(1, clusterCount - 1));
+    const t = 0.12 + 0.88 * (c / Math.max(1, clusterCount - 1));
     const { point, normal } = pointAtArcLength(path, t);
     const side = c % 2 === 0 ? 1 : -1;
-    const offset = 5 + frng() * 22;
+    const offset = 8 + frng() * 30;
     foliage.push(
       buildLeafCluster(
         { x: point.x + normal.x * offset * side, y: point.y + normal.y * offset * side },
@@ -239,9 +258,9 @@ function buildBranch(
     );
   }
   const tip = path[path.length - 1];
-  for (let k = 0; k < 6; k++) {
-    const a = dirAngle + (frng() - 0.5) * 0.9;
-    const r = 8 + k * 8;
+  for (let k = 0; k < 10; k++) {
+    const a = dirAngle + (frng() - 0.5) * 1.4;
+    const r = 10 + k * 9;
     foliage.push(
       buildLeafCluster(
         { x: tip.x + Math.cos(a) * r, y: tip.y + Math.sin(a) * r },
@@ -249,18 +268,15 @@ function buildBranch(
       ),
     );
   }
-  const clearedFoliage = foliage.filter((leaf) =>
-    twigs.every((twig) => dist(leaf.center, twig.leaf.center) >= FOLIAGE_CLEARANCE),
-  );
 
   return {
     branchId: branch.id,
     title: branch.title,
     path,
-    baseWidth: 8 + Math.min(7, count * 0.2),
-    tipWidth: 3,
+    baseWidth: 12 + Math.min(10, count * 0.35),
+    tipWidth: 4,
     twigs,
-    foliage: clearedFoliage,
+    foliage,
   };
 }
 
@@ -298,7 +314,7 @@ function buildGroundRoots(base: Point): { layouts: GroundRootLayout[]; fork: Poi
   ];
   const fork = taproot[taproot.length - 1];
   const layouts: GroundRootLayout[] = [
-    { path: taproot, baseWidth: TRUNK_BASE_WIDTH, tipWidth: 17 },
+    { path: taproot, baseWidth: TRUNK_BASE_WIDTH * TRUNK_FLARE, tipWidth: 20 },
   ];
   const angles = [-0.95, -0.5, 0.05, 0.5, 0.95];
   angles.forEach((rel, i) => {
@@ -417,10 +433,10 @@ export function buildTreeLayout(
   for (const branch of branchLayouts) {
     for (const twig of branch.twigs) {
       const fr = mulberry32(hashString(`fruitfol:${twig.achievementId}`));
-      const ringCount = 6 + Math.floor(fr() * 3);
+      const ringCount = 7 + Math.floor(fr() * 3);
       for (let k = 0; k < ringCount; k++) {
         const a = (k / ringCount) * Math.PI * 2 + fr() * 0.8;
-        const r = 8 + fr() * 8;
+        const r = 10 + fr() * 9;
         const cluster = buildLeafCluster(
           { x: twig.leaf.center.x + Math.cos(a) * r, y: twig.leaf.center.y + Math.sin(a) * r },
           hashString(`fruitfol:${twig.achievementId}:${k}`),
@@ -429,6 +445,16 @@ export function buildTreeLayout(
         branch.foliage.push(cluster);
       }
     }
+  }
+
+  // Filler foliage keeps clear of the settled fruit positions so every fruit
+  // sits in its own visual pocket (owned tufts hug their fruit on purpose).
+  for (const branch of branchLayouts) {
+    branch.foliage = branch.foliage.filter(
+      (leaf) =>
+        leaf.ownerId !== undefined ||
+        allTwigs.every((t) => dist(leaf.center, t.leaf.center) >= FOLIAGE_CLEARANCE),
+    );
   }
 
   const ground = buildGroundRoots(trunk.path[0]);
@@ -451,7 +477,9 @@ export function buildTreeLayout(
   for (const g of groundRoots) {
     for (const p of g.path) expandBounds(bounds, p, g.baseWidth);
   }
-  const margin = 30;
+  // Roomy margin: the pixel background (sky, clouds, grass, stones) is painted
+  // across the whole bounds, so the tree gets a scene around it.
+  const margin = 140;
   bounds.minX -= margin;
   bounds.maxX += margin;
   bounds.minY -= margin;

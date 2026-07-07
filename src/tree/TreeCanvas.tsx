@@ -202,20 +202,28 @@ export const TreeCanvas = forwardRef<TreeCanvasHandle, TreeCanvasProps>(function
 
   // Sky above / earth below, split at the world-space ground line (y=0, the
   // trunk base). Recomputed from the camera so the horizon pans and zooms with
-  // the tree; the roots end up "buried" in the earth band.
+  // the tree; the roots end up "buried" in the earth band. The colors match
+  // the pixel-art background painted inside the canvas, so panning past the
+  // canvas edge continues the same scene in flat color.
   const horizonY = (0 - layout.bounds.minY) * camera.scale + camera.ty;
-  // Sky → a band of grass green at ground level → earth.
-  const grass = Math.max(12, Math.round(18 * camera.scale));
+  // 15 world units of grass — mirrors GRASS_DEPTH_CELLS × PIXEL in the renderer.
+  const grass = Math.max(6, Math.round(15 * camera.scale));
+  // Pin the gradient to the canvas edges: the topmost sky band above the
+  // canvas and the deepest earth band below it, so the painted scene and the
+  // CSS backdrop meet in the same color and the canvas border disappears.
+  const canvasTopY = camera.ty;
+  const canvasBottomY = (layout.bounds.maxY - layout.bounds.minY) * camera.scale + camera.ty;
   const skyGroundBackground = [
     "linear-gradient(to bottom",
     "#2f6bab 0px",
+    `#2f6bab ${Math.round(canvasTopY)}px`,
     `#4f8ec7 ${Math.round(horizonY - 80)}px`,
-    `#8fbfe0 ${Math.round(horizonY - 6)}px`,
+    `#9ccbe9 ${Math.round(horizonY - 6)}px`,
     `#5ea23f ${Math.round(horizonY)}px`,
     `#3f7a2a ${Math.round(horizonY + grass)}px`,
     `#8a5526 ${Math.round(horizonY + grass)}px`,
-    `#5c3818 ${Math.round(horizonY + grass + 70)}px`,
-    "#3a220f 100%)",
+    `#3f240f ${Math.round(canvasBottomY)}px`,
+    "#3f240f 100%)",
   ].join(", ");
 
   // React registers onWheel as a passive listener, where preventDefault() is
