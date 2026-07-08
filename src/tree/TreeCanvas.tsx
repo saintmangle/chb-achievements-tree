@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ProgressMap } from "../types";
-import { hitTest, renderTree, type HitTarget } from "./renderer";
+import { hitTest, renderTree, sceneBackdropGradient, type HitTarget } from "./renderer";
 import type { Point, TreeLayout } from "./types";
 
 export interface TreeCanvasHandle {
@@ -200,31 +200,10 @@ export const TreeCanvas = forwardRef<TreeCanvasHandle, TreeCanvasProps>(function
     dragState.current = null;
   };
 
-  // Sky above / earth below, split at the world-space ground line (y=0, the
-  // trunk base). Recomputed from the camera so the horizon pans and zooms with
-  // the tree; the roots end up "buried" in the earth band. The colors match
-  // the pixel-art background painted inside the canvas, so panning past the
-  // canvas edge continues the same scene in flat color.
-  const horizonY = (0 - layout.bounds.minY) * camera.scale + camera.ty;
-  // 15 world units of grass — mirrors GRASS_DEPTH_CELLS × PIXEL in the renderer.
-  const grass = Math.max(6, Math.round(15 * camera.scale));
-  // Pin the gradient to the canvas edges: the topmost sky band above the
-  // canvas and the deepest earth band below it, so the painted scene and the
-  // CSS backdrop meet in the same color and the canvas border disappears.
-  const canvasTopY = camera.ty;
-  const canvasBottomY = (layout.bounds.maxY - layout.bounds.minY) * camera.scale + camera.ty;
-  const skyGroundBackground = [
-    "linear-gradient(to bottom",
-    "#2f6bab 0px",
-    `#2f6bab ${Math.round(canvasTopY)}px`,
-    `#4f8ec7 ${Math.round(horizonY - 80)}px`,
-    `#9ccbe9 ${Math.round(horizonY - 6)}px`,
-    `#5ea23f ${Math.round(horizonY)}px`,
-    `#3f7a2a ${Math.round(horizonY + grass)}px`,
-    `#8a5526 ${Math.round(horizonY + grass)}px`,
-    `#3f240f ${Math.round(canvasBottomY)}px`,
-    "#3f240f 100%)",
-  ].join(", ");
+  // The CSS backdrop repeats the painted scene's exact sky/grass/earth bands
+  // at the same screen heights, so the canvas edge is invisible when panning
+  // or zooming past it.
+  const skyGroundBackground = sceneBackdropGradient(layout, camera.scale, camera.ty);
 
   // React registers onWheel as a passive listener, where preventDefault() is
   // ignored (the browser would still ctrl+wheel-zoom the page). A manual
@@ -255,7 +234,7 @@ export const TreeCanvas = forwardRef<TreeCanvasHandle, TreeCanvasProps>(function
       ref={containerRef}
       className="tree-viewport"
       role="img"
-      aria-label="Пиксельное дерево достижений. Для клавиатуры и скринридера есть текстовый список достижений."
+      aria-label="Пиксельное дерево достижений. Все достижения доступны по кнопке «список» в шапке."
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={endPointer}

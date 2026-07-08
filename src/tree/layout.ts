@@ -33,8 +33,12 @@ const BRANCH_LENGTH_PER_TWIG = 16;
 const BRANCH_SEGMENT_LENGTH = 13;
 const BRANCH_JITTER = 0.18;
 // Branches arc upward as they grow (0 = straight, 1 = fully turned up by the
-// tip) — the low limbs curl like the reference trees and the crown gets round.
-const BRANCH_CURL = 0.45;
+// tip). Only the near-horizontal low limbs curl hard; the already-steep top
+// branches barely bend, so branches from the two sides never cross up top.
+const BRANCH_CURL = 0.5;
+// The first stretch of every limb is bare wood, like on a real tree — leaves
+// and fruits only start past this fraction of the branch length.
+const BRANCH_BARE_FRACTION = 0.3;
 
 // Chained ("сюжетные") achievements grow outward from their parent leaf,
 // one step per link, so a requires-chain reads as one long twig.
@@ -166,6 +170,7 @@ function buildBranch(
   branchAchievements: Achievement[],
   attach: Point,
   dirAngle: number,
+  curl: number,
 ): BranchLayout {
   const seed = hashString(`branch:${branch.id}`);
   const count = branchAchievements.length;
@@ -193,7 +198,7 @@ function buildBranch(
     seed,
     BRANCH_JITTER,
     -Math.PI / 2,
-    BRANCH_CURL,
+    curl,
   );
 
   const twigs: TwigLayout[] = [];
@@ -227,7 +232,9 @@ function buildBranch(
   };
 
   starts.forEach((achievement, i) => {
-    const t = (i + 1) / (starts.length + 1);
+    // Fruits start away from the trunk — the first stretch of a real limb
+    // is bare wood.
+    const t = BRANCH_BARE_FRACTION + (1 - BRANCH_BARE_FRACTION) * ((i + 1) / (starts.length + 1));
     const { point, normal } = pointAtArcLength(path, t);
     const twigSide = i % 2 === 0 ? 1 : -1;
     const offset = 18 + (i % 3) * 5;
@@ -246,7 +253,7 @@ function buildBranch(
   const frng = mulberry32(hashString(`foliage:${branch.id}`));
   const clusterCount = Math.max(32, Math.round(segmentCount * 5));
   for (let c = 0; c < clusterCount; c++) {
-    const t = 0.12 + 0.88 * (c / Math.max(1, clusterCount - 1));
+    const t = BRANCH_BARE_FRACTION + (1 - BRANCH_BARE_FRACTION) * (c / Math.max(1, clusterCount - 1));
     const { point, normal } = pointAtArcLength(path, t);
     const side = c % 2 === 0 ? 1 : -1;
     const offset = 8 + frng() * 30;
@@ -385,7 +392,10 @@ export function buildTreeLayout(
       const angle = BRANCH_ANGLE_FROM + frac * (BRANCH_ANGLE_TO - BRANCH_ANGLE_FROM);
       // Canvas y grows downward, so "up and outward" is negative sin.
       const dirAngle = isLeft ? Math.PI + angle : -angle;
-      return buildBranch(branch, byBranch.get(branch.id) ?? [], attach, dirAngle);
+      // Low near-horizontal limbs arc up hard; the already-steep top branches
+      // barely bend, so the two sides never curl into each other at the top.
+      const curl = BRANCH_CURL * (1 - frac * 0.85);
+      return buildBranch(branch, byBranch.get(branch.id) ?? [], attach, dirAngle, curl);
     });
 
   // Order matters for the trunk stripes: left side first, then right —

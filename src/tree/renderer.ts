@@ -82,20 +82,22 @@ function rgbString([r, g, b]: Rgb): string {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-// Muted, dark per-branch hues. Golden-angle spacing keeps neighbouring
-// branch ids far apart on the wheel; low saturation + a blend toward the
-// trunk brown keeps everything wooden rather than neon.
+// Barely-there per-branch bark tints. Golden-angle spacing keeps neighbouring
+// branch ids far apart on the wheel; the heavy blend toward trunk brown makes
+// every branch read as wood first, with a warm/cool undertone to tell them
+// apart on a second look.
 function branchRgb(branchId: number): Rgb {
   const hue = (branchId * 137.5) % 360;
-  return lerpRgb(hslToRgb(hue, 0.34, 0.32), WOOD_RGB, 0.35);
+  return lerpRgb(hslToRgb(hue, 0.3, 0.32), WOOD_RGB, 0.65);
 }
 
-function branchColor(branchId: number): string {
+/** Public: the list view shows this tint as a legend chip next to the branch name. */
+export function branchColor(branchId: number): string {
   return rgbString(branchRgb(branchId));
 }
 
 function branchStubColor(branchId: number): string {
-  return rgbString(lerpRgb(branchRgb(branchId), [220, 210, 190], 0.18));
+  return rgbString(lerpRgb(branchRgb(branchId), [220, 210, 190], 0.22));
 }
 
 function cellOf(v: number): number {
@@ -323,7 +325,7 @@ function buildBackground(layout: TreeLayout, width: number, height: number): HTM
   // the flat CSS backdrop that continues beyond the canvas.
   const edgeFade = (cx: number, cy: number): number => {
     const d = Math.min(cx - xFrom, xTo - cx, cy - yFrom, yTo - cy);
-    return Math.min(1, Math.max(0, d / 14));
+    return Math.min(1, Math.max(0, d / 26));
   };
 
   // Sky: bands lightening toward the horizon, seams broken by dither noise.
@@ -415,6 +417,40 @@ function buildBackground(layout: TreeLayout, width: number, height: number): HTM
 
 let backgroundCache: { layout: TreeLayout; canvas: HTMLCanvasElement } | null = null;
 
+/**
+ * CSS backdrop for the viewport around the canvas: the same sky/grass/earth
+ * bands at the same screen heights as the painted scene (whose texture fades
+ * out at the edges), so panning or zooming past the canvas shows the scene
+ * continuing in flat color instead of a floating rectangle.
+ */
+export function sceneBackdropGradient(layout: TreeLayout, scale: number, ty: number): string {
+  const { bounds } = layout;
+  const canvasTop = ty;
+  const horizon = (0 - bounds.minY) * scale + ty;
+  const grassPx = GRASS_DEPTH_CELLS * PIXEL * scale;
+  const earthTop = horizon + grassPx;
+  const canvasBottom = (bounds.maxY - bounds.minY) * scale + ty;
+
+  const stops: string[] = [`${SKY_BANDS[0]} 0px`];
+  const skyH = Math.max(1, horizon - canvasTop);
+  const nSky = SKY_BANDS.length;
+  for (let k = 0; k < nSky; k++) {
+    const from = canvasTop + (Math.max(0, k - 0.5) / (nSky - 1)) * skyH;
+    const to = canvasTop + (Math.min(nSky - 1, k + 0.5) / (nSky - 1)) * skyH;
+    stops.push(`${SKY_BANDS[k]} ${Math.round(from)}px`, `${SKY_BANDS[k]} ${Math.round(to)}px`);
+  }
+  stops.push(`${GRASS_BASE} ${Math.round(horizon)}px`, `${GRASS_BASE} ${Math.round(earthTop)}px`);
+  const earthH = Math.max(1, canvasBottom - earthTop);
+  const nEarth = EARTH_BANDS.length;
+  for (let k = 0; k < nEarth; k++) {
+    const from = earthTop + (Math.max(0, k - 0.5) / (nEarth - 1)) * earthH;
+    const to = earthTop + (Math.min(nEarth - 1, k + 0.5) / (nEarth - 1)) * earthH;
+    stops.push(`${EARTH_BANDS[k]} ${Math.round(from)}px`, `${EARTH_BANDS[k]} ${Math.round(to)}px`);
+  }
+  stops.push(`${EARTH_BANDS[nEarth - 1]} 100%`);
+  return `linear-gradient(to bottom, ${stops.join(", ")})`;
+}
+
 export interface RenderOptions {
   progress: ProgressMap;
   highlightedId: string | null;
@@ -478,18 +514,25 @@ export function renderTree(
   // the overlapping shadows carve the dark clefts that make the canopy lumpy.
   const creamClusters: LeafCluster[] = [];
   const greenClusters: LeafCluster[] = [];
+  // Proximity greening is checked against every completed fruit on the tree,
+  // not just the cluster's own branch — neighbouring branches overlap, and a
+  // green patch must have no cream stragglers from the branch next door.
+  const allCompletedCenters: Point[] = [];
   for (const branch of layout.branches) {
-    const completedCenters = branch.twigs
-      .filter((t) => options.progress[t.achievementId])
-      .map((t) => t.leaf.center);
-    const branchDone = branch.twigs.length > 0 && completedCenters.length === branch.twigs.length;
+    for (const twig of branch.twigs) {
+      if (options.progress[twig.achievementId]) allCompletedCenters.push(twig.leaf.center);
+    }
+  }
+  for (const branch of layout.branches) {
+    const doneCount = branch.twigs.filter((t) => options.progress[t.achievementId]).length;
+    const branchDone = branch.twigs.length > 0 && doneCount === branch.twigs.length;
     for (const leaf of branch.foliage) {
       // A fruit's own tuft greens with that fruit; filler clusters green when
       // any completed fruit is nearby (and always once the branch is done).
       const green = leaf.ownerId
         ? Boolean(options.progress[leaf.ownerId])
         : branchDone ||
-          completedCenters.some((c) => distSq(c, leaf.center) < GREEN_RADIUS * GREEN_RADIUS);
+          allCompletedCenters.some((c) => distSq(c, leaf.center) < GREEN_RADIUS * GREEN_RADIUS);
       (green ? greenClusters : creamClusters).push(leaf);
     }
   }
