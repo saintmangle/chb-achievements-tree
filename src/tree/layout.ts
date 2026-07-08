@@ -14,8 +14,10 @@ import type {
 
 // The world is deliberately roomy relative to the 3-unit pixel grid — more
 // spacing between elements means the fat pixels don't pile onto each other.
-const TRUNK_HEIGHT = 520;
-const TRUNK_SEGMENTS = 40;
+// Short thick trunk like the sakura reference: the crown starts low and takes
+// up most of the tree's height.
+const TRUNK_HEIGHT = 300;
+const TRUNK_SEGMENTS = 24;
 const TRUNK_BASE_WIDTH = 58;
 const TRUNK_TOP_WIDTH = 34;
 // The trunk flares toward the ground like the reference art.
@@ -29,10 +31,12 @@ const CROWN_FORK_ANGLES = [-0.55, 0.5];
 // steeper, so each one stays inside its own angular sector. The steepest
 // branch stays under ~55° — near-vertical branches from the two sides used to
 // bunch into a parallel broom at the crown top.
-const BRANCH_ATTACH_FROM = 0.38;
+// Branches all spring from a low fork zone in the upper half of the short
+// trunk — the gnarled-limbs-from-one-knot look of the reference.
+const BRANCH_ATTACH_FROM = 0.55;
 const BRANCH_ATTACH_TO = 0.97;
-const BRANCH_ANGLE_FROM = (9 * Math.PI) / 180;
-const BRANCH_ANGLE_TO = (55 * Math.PI) / 180;
+const BRANCH_ANGLE_FROM = (14 * Math.PI) / 180;
+const BRANCH_ANGLE_TO = (58 * Math.PI) / 180;
 const BRANCH_BASE_LENGTH = 90;
 const BRANCH_LENGTH_PER_TWIG = 16;
 const BRANCH_SEGMENT_LENGTH = 13;
@@ -43,7 +47,7 @@ const BRANCH_JITTER = 0.1;
 // angle and vertical, so if branch A starts below branch B it also ends below
 // it — the angular lanes never converge. (Scaling curl per branch broke this
 // and made mid-crown branches meet.)
-const BRANCH_CURL = 0.35;
+const BRANCH_CURL = 0.45;
 // The first stretch of every limb is bare wood, like on a real tree — leaves
 // and fruits only start past this fraction of the branch length.
 const BRANCH_BARE_FRACTION = 0.3;
@@ -274,12 +278,12 @@ function buildBranch(
   // later, once the fruits have settled into their final positions.)
   const foliage: LeafCluster[] = [];
   const frng = mulberry32(hashString(`foliage:${branch.id}`));
-  const clusterCount = Math.max(32, Math.round(segmentCount * 5));
+  const clusterCount = Math.max(36, Math.round(segmentCount * 6));
   for (let c = 0; c < clusterCount; c++) {
     const t = BRANCH_BARE_FRACTION + (1 - BRANCH_BARE_FRACTION) * (c / Math.max(1, clusterCount - 1));
     const { point, normal } = pointAtArcLength(path, t);
     const side = c % 2 === 0 ? 1 : -1;
-    const offset = 8 + frng() * 30;
+    const offset = 10 + frng() * 38;
     foliage.push(
       buildLeafCluster(
         { x: point.x + normal.x * offset * side, y: point.y + normal.y * offset * side },
@@ -288,9 +292,9 @@ function buildBranch(
     );
   }
   const tip = path[path.length - 1];
-  for (let k = 0; k < 10; k++) {
-    const a = dirAngle + (frng() - 0.5) * 1.4;
-    const r = 10 + k * 9;
+  for (let k = 0; k < 12; k++) {
+    const a = dirAngle + (frng() - 0.5) * 1.6;
+    const r = 10 + k * 8;
     foliage.push(
       buildLeafCluster(
         { x: tip.x + Math.cos(a) * r, y: tip.y + Math.sin(a) * r },
@@ -517,7 +521,9 @@ export function buildTreeLayout(
   // not at the trunk, like on a real tree. The clearance stops short of the
   // trunk's top, so the crown closes over the tapering leader instead of
   // leaving a bare channel around it.
-  const trunkClearancePath = trunk.path.slice(0, Math.floor(TRUNK_SEGMENTS * 0.86));
+  // Only the bare lower trunk repels foliage — the crown hangs low around the
+  // fork zone, like the reference sakura.
+  const trunkClearancePath = trunk.path.slice(0, Math.floor(TRUNK_SEGMENTS * 0.5));
   for (const branch of branchLayouts) {
     branch.foliage = branch.foliage.filter(
       (leaf) =>
