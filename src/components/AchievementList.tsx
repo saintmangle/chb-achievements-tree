@@ -35,7 +35,7 @@ export function AchievementList({
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    closeRef.current?.focus();
+    closeRef.current?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };

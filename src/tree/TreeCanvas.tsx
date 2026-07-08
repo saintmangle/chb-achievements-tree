@@ -68,12 +68,17 @@ export const TreeCanvas = forwardRef<TreeCanvasHandle, TreeCanvasProps>(function
     const cw = container.clientWidth;
     const ch = container.clientHeight;
     if (!cw || !ch) return;
-    const scale = Math.min(cw / canvasWidth, ch / canvasHeight) * 0.92;
+    // Fit the TREE, not the whole canvas — the canvas continues far beyond
+    // the tree as painted scenery, so zooming out stays inside the artwork.
+    const tb = layout.treeBounds;
+    const treeW = tb.maxX - tb.minX;
+    const treeH = tb.maxY - tb.minY;
+    const scale = Math.min(cw / treeW, ch / treeH) * 0.92;
     minScaleRef.current = scale * 0.6;
-    const tx = (cw - canvasWidth * scale) / 2;
-    const ty = (ch - canvasHeight * scale) / 2 + ch * 0.05;
-    setCamera({ scale, tx, ty });
-  }, [canvasWidth, canvasHeight]);
+    const cx = (tb.minX + tb.maxX) / 2 - layout.bounds.minX;
+    const cy = (tb.minY + tb.maxY) / 2 - layout.bounds.minY;
+    setCamera({ scale, tx: cw / 2 - cx * scale, ty: ch / 2 - cy * scale + ch * 0.05 });
+  }, [layout]);
 
   useImperativeHandle(ref, () => ({ fitAll }), [fitAll]);
 

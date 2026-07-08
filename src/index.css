@@ -355,6 +355,8 @@ body {
 
 .list-panel-body {
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: 0 14px 24px;
 }
 

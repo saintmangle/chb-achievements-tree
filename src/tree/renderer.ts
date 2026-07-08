@@ -92,19 +92,21 @@ function hexRgb(hex: string): Rgb {
 }
 
 /** Evenly-spaced color steps along a piecewise-linear ramp through the keys. */
-function rampBands(keys: string[], steps: number): string[] {
+function rampBands(keys: string[], steps: number): Rgb[] {
   const rgbKeys = keys.map(hexRgb);
-  const bands: string[] = [];
+  const bands: Rgb[] = [];
   for (let i = 0; i < steps; i++) {
     const pos = (i / (steps - 1)) * (rgbKeys.length - 1);
     const k = Math.min(rgbKeys.length - 2, Math.floor(pos));
-    bands.push(rgbString(lerpRgb(rgbKeys[k], rgbKeys[k + 1], pos - k)));
+    bands.push(lerpRgb(rgbKeys[k], rgbKeys[k + 1], pos - k));
   }
   return bands;
 }
 
 const SKY_BANDS = rampBands(SKY_KEYS, 18);
 const EARTH_BANDS = rampBands(EARTH_KEYS, 12);
+const GRASS_BASE_RGB = hexRgb(GRASS_BASE);
+const GRASS_SHADES_RGB = GRASS_SHADES.map(hexRgb);
 
 // Barely-there per-branch bark tints. Golden-angle spacing keeps neighbouring
 // branch ids far apart on the wheel; the heavy blend toward trunk brown makes
@@ -121,7 +123,7 @@ export function branchColor(branchId: number): string {
 }
 
 function branchStubColor(branchId: number): string {
-  return rgbString(lerpRgb(branchRgb(branchId), [220, 210, 190], 0.22));
+  return rgbString(lerpRgb(branchRgb(branchId), [220, 210, 190], 0.3));
 }
 
 function cellOf(v: number): number {
@@ -319,56 +321,106 @@ function drawTrunkStripes(ctx: CanvasRenderingContext2D, layout: TreeLayout) {
   }
 }
 
-/**
- * The scene behind the tree, painted once per layout and cached: banded sky
- * with pixel clouds, a grass lip at the ground line (blades poking up), and
- * earth that darkens with depth, speckled and studded with shaded stones.
- * Deterministic, so it never flickers between redraws.
- */
-function buildBackground(layout: TreeLayout, width: number, height: number): HTMLCanvasElement {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d")!;
-  const { bounds } = layout;
-  ctx.imageSmoothingEnabled = false;
-  ctx.translate(Math.round(-bounds.minX), Math.round(-bounds.minY));
+interface CachedLayer {
+  canvas: HTMLCanvasElement;
+  /** Where to draw the layer on the main canvas (identity coordinates). */
+  dx: number;
+  dy: number;
+}
 
+/**
+ * The scene behind the tree, painted once per layout and cached: a dithered
+ * sky with pixel clouds, a grass lip at the ground line (blades poking up),
+ * and earth that darkens with depth, speckled and studded with shaded stones.
+ * Built at ONE CANVAS PIXEL PER WORLD CELL straight into an ImageData buffer
+ * (the apron around the tree is huge), then upscaled ×PIXEL with smoothing
+ * off, which keeps the fat-pixel grid exact. Deterministic, so it never
+ * flickers between redraws.
+ */
+function buildBackground(layout: TreeLayout): CachedLayer {
+  const { bounds } = layout;
   const xFrom = cellOf(bounds.minX) - 1;
   const xTo = cellOf(bounds.maxX) + 1;
   const yFrom = cellOf(bounds.minY) - 1;
   const yTo = cellOf(bounds.maxY) + 1;
+  const wCells = xTo - xFrom + 1;
+  const hCells = yTo - yFrom + 1;
   const yGround = 0; // the trunk base sits on the ground line (world y = 0)
 
-  const fill = (cx: number, cy: number, color: string) => {
-    ctx.fillStyle = color;
-    ctx.fillRect(cx * PIXEL, cy * PIXEL, PIXEL, PIXEL);
-  };
+  const canvas = document.createElement("canvas");
+  canvas.width = wCells;
+  canvas.height = hCells;
+  const ctx = canvas.getContext("2d")!;
+  const img = ctx.createImageData(wCells, hCells);
+  const px = img.data;
 
-  // Texture fades out near the canvas edges, so the painted scene blends into
-  // the flat CSS backdrop that continues beyond the canvas.
+  // Texture fades out near the scene edges, blending into the flat CSS
+  // backdrop that continues beyond the canvas.
   const edgeFade = (cx: number, cy: number): number => {
     const d = Math.min(cx - xFrom, xTo - cx, cy - yFrom, yTo - cy);
     return Math.min(1, Math.max(0, d / 26));
   };
 
-  // Sky: bands lightening toward the horizon, seams broken by dither noise.
   const skyRows = Math.max(1, yGround - yFrom);
-  for (let cy = yFrom; cy < yGround; cy++) {
-    const t = (cy - yFrom) / skyRows;
+  const earthFrom = yGround + GRASS_DEPTH_CELLS;
+  const earthRows = Math.max(1, yTo - earthFrom);
+
+  for (let cy = yFrom; cy <= yTo; cy++) {
     for (let cx = xFrom; cx <= xTo; cx++) {
-      const v = t * (SKY_BANDS.length - 1) + (cellNoise(cx, cy) - 0.5) * 1.2 * edgeFade(cx, cy);
-      const idx = Math.min(SKY_BANDS.length - 1, Math.max(0, Math.round(v)));
-      fill(cx, cy, SKY_BANDS[idx]);
+      const fade = edgeFade(cx, cy);
+      const n = cellNoise(cx, cy);
+      let rgb: Rgb;
+      if (cy < yGround) {
+        // Sky: fine bands lightening toward the horizon, dither-blended.
+        const t = (cy - yFrom) / skyRows;
+        const v = t * (SKY_BANDS.length - 1) + (n - 0.5) * 1.2 * fade;
+        rgb = SKY_BANDS[Math.min(SKY_BANDS.length - 1, Math.max(0, Math.round(v)))];
+      } else if (cy < earthFrom) {
+        // Grass lip at the ground line.
+        const lastRow = cy === earthFrom - 1;
+        rgb =
+          n < 0.2 * fade
+            ? GRASS_SHADES_RGB[0]
+            : n > 1 - 0.15 * fade
+              ? GRASS_SHADES_RGB[1]
+              : lastRow && n > 0.5 && fade === 1
+                ? GRASS_SHADES_RGB[2]
+                : GRASS_BASE_RGB;
+      } else {
+        // Earth: darkens with depth; speckles are nearby depth bands.
+        const t = (cy - earthFrom) / earthRows;
+        const v = t * (EARTH_BANDS.length - 1) + (n - 0.5) * 1.6 * fade;
+        let idx = Math.min(EARTH_BANDS.length - 1, Math.max(0, Math.round(v)));
+        if (n < 0.05 * fade) idx = Math.min(EARTH_BANDS.length - 1, idx + 3);
+        else if (n > 1 - 0.05 * fade) idx = Math.max(0, idx - 3);
+        rgb = EARTH_BANDS[idx];
+      }
+      const o = ((cy - yFrom) * wCells + (cx - xFrom)) * 4;
+      px[o] = rgb[0];
+      px[o + 1] = rgb[1];
+      px[o + 2] = rgb[2];
+      px[o + 3] = 255;
     }
   }
+  ctx.putImageData(img, 0, 0);
 
-  // Clouds: flat-bottomed puffs with a shaded underside, kept off the edges.
+  // Decorations, still at one pixel per cell.
+  const dot = (cx: number, cy: number, color: string) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(cx - xFrom, cy - yFrom, 1, 1);
+  };
+
+  // Grass blades poking into the sky.
+  for (let cx = xFrom; cx <= xTo; cx++) {
+    if (cellNoise(cx, 911) < 0.22 * edgeFade(cx, yGround)) dot(cx, yGround - 1, GRASS_BASE);
+  }
+
+  // Clouds: flat-bottomed puffs with a shaded underside, all over the sky.
   const rng = mulberry32(20260707);
-  const cloudCount = Math.max(6, Math.round(((xTo - xFrom) * skyRows) / 22000));
+  const cloudCount = Math.max(8, Math.round((wCells * skyRows) / 16000));
   for (let i = 0; i < cloudCount; i++) {
-    const cx = xFrom + 22 + Math.floor(rng() * Math.max(1, xTo - xFrom - 44));
-    const cy = yFrom + 10 + Math.floor(rng() * Math.max(1, skyRows * 0.72));
+    const cx = xFrom + 22 + Math.floor(rng() * Math.max(1, wCells - 44));
+    const cy = yFrom + 10 + Math.floor(rng() * Math.max(1, skyRows * 0.8));
     const w = 14 + Math.floor(rng() * 24);
     const h = 4 + Math.floor(rng() * 4);
     const half = Math.floor(w / 2);
@@ -377,52 +429,15 @@ function buildBackground(layout: TreeLayout, width: number, height: number): HTM
       const lump = 0.7 + cellNoise(cx + dx, cy) * 0.5;
       const col = Math.max(1, Math.round(h * Math.sqrt(Math.max(0, 1 - rel * rel)) * lump));
       for (let k = 0; k < col; k++) {
-        fill(cx + dx, cy - k, k === 0 ? CLOUD_SHADE : CLOUD_MAIN);
+        dot(cx + dx, cy - k, k === 0 ? CLOUD_SHADE : CLOUD_MAIN);
       }
     }
   }
 
-  // Grass lip at the ground line, with blades poking into the sky.
-  for (let cy = yGround; cy < yGround + GRASS_DEPTH_CELLS; cy++) {
-    for (let cx = xFrom; cx <= xTo; cx++) {
-      const fade = edgeFade(cx, cy);
-      const n = cellNoise(cx, cy);
-      const lastRow = cy === yGround + GRASS_DEPTH_CELLS - 1;
-      const color =
-        n < 0.2 * fade
-          ? GRASS_SHADES[0]
-          : n > 1 - 0.15 * fade
-            ? GRASS_SHADES[1]
-            : lastRow && n > 0.5 && fade === 1
-              ? GRASS_SHADES[2]
-              : GRASS_BASE;
-      fill(cx, cy, color);
-    }
-  }
-  for (let cx = xFrom; cx <= xTo; cx++) {
-    if (cellNoise(cx, 911) < 0.22 * edgeFade(cx, yGround)) fill(cx, yGround - 1, GRASS_BASE);
-  }
-
-  // Earth: darkens with depth; soft speckles and pebbles break the monotony.
-  const earthFrom = yGround + GRASS_DEPTH_CELLS;
-  const earthRows = Math.max(1, yTo - earthFrom);
-  for (let cy = earthFrom; cy <= yTo; cy++) {
-    const t = (cy - earthFrom) / earthRows;
-    for (let cx = xFrom; cx <= xTo; cx++) {
-      const fade = edgeFade(cx, cy);
-      const n = cellNoise(cx, cy);
-      const v = t * (EARTH_BANDS.length - 1) + (n - 0.5) * 1.6 * fade;
-      const idx = Math.min(EARTH_BANDS.length - 1, Math.max(0, Math.round(v)));
-      let color = EARTH_BANDS[idx];
-      // Speckles are nearby depth bands, a few steps away, so they stay subtle.
-      if (n < 0.05 * fade) color = EARTH_BANDS[Math.min(EARTH_BANDS.length - 1, idx + 3)];
-      else if (n > 1 - 0.05 * fade) color = EARTH_BANDS[Math.max(0, idx - 3)];
-      fill(cx, cy, color);
-    }
-  }
-  const stoneCount = Math.max(10, Math.round(((xTo - xFrom) * earthRows) / 3500));
+  // Stones scattered through the earth.
+  const stoneCount = Math.max(12, Math.round((wCells * earthRows) / 3500));
   for (let i = 0; i < stoneCount; i++) {
-    const sx = xFrom + 8 + Math.floor(rng() * Math.max(1, xTo - xFrom - 16));
+    const sx = xFrom + 8 + Math.floor(rng() * Math.max(1, wCells - 16));
     const sy = earthFrom + 3 + Math.floor(rng() * Math.max(1, earthRows - 8));
     const sw = 2 + Math.floor(rng() * 3);
     const sh = 1 + Math.floor(rng() * 2);
@@ -431,15 +446,19 @@ function buildBackground(layout: TreeLayout, width: number, height: number): HTM
         // Clip the corners so wider pebbles read as rounded.
         if ((dx === 0 || dx === sw - 1) && (dy === 0 || dy === sh - 1) && sw > 2) continue;
         const color = dy === 0 && dx < sw - 1 ? STONE.light : dy === sh - 1 || dx === sw - 1 ? STONE.dark : STONE.mid;
-        fill(sx + dx, sy + dy, color);
+        dot(sx + dx, sy + dy, color);
       }
     }
   }
 
-  return canvas;
+  return {
+    canvas,
+    dx: xFrom * PIXEL + Math.round(-bounds.minX),
+    dy: yFrom * PIXEL + Math.round(-bounds.minY),
+  };
 }
 
-let backgroundCache: { layout: TreeLayout; canvas: HTMLCanvasElement } | null = null;
+let backgroundCache: { layout: TreeLayout; layer: CachedLayer } | null = null;
 
 /**
  * Solid silhouette of all the wood — roots, trunk, branches — in the outline
@@ -447,13 +466,16 @@ let backgroundCache: { layout: TreeLayout; canvas: HTMLCanvasElement } | null = 
  * unbroken outline around the whole figure, so no branch outline ever crosses
  * the trunk and the tree reads as one piece.
  */
-function buildWoodMask(layout: TreeLayout, width: number, height: number): HTMLCanvasElement {
+function buildWoodMask(layout: TreeLayout): CachedLayer {
+  // Sized to the tree itself, not the huge scenery apron around it.
+  const tb = layout.treeBounds;
+  const pad = PIXEL * 2;
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = Math.ceil(tb.maxX - tb.minX) + pad * 2;
+  canvas.height = Math.ceil(tb.maxY - tb.minY) + pad * 2;
   const ctx = canvas.getContext("2d")!;
   ctx.imageSmoothingEnabled = false;
-  ctx.translate(Math.round(-layout.bounds.minX), Math.round(-layout.bounds.minY));
+  ctx.translate(Math.round(-tb.minX) + pad, Math.round(-tb.minY) + pad);
   const color = COLORS.woodOutline;
   for (const g of layout.groundRoots) drawTaperedPath(ctx, g.path, g.baseWidth, g.tipWidth, color);
   for (const r of layout.roots) drawTaperedPath(ctx, r.path, r.baseWidth, r.tipWidth, color);
@@ -462,10 +484,14 @@ function buildWoodMask(layout: TreeLayout, width: number, height: number): HTMLC
     drawPixelLine(ctx, trunk.path[i], trunk.path[i + 1], trunk.widths[i], color);
   }
   for (const b of layout.branches) drawTaperedPath(ctx, b.path, b.baseWidth, b.tipWidth, color);
-  return canvas;
+  return {
+    canvas,
+    dx: Math.round(-layout.bounds.minX) - (Math.round(-tb.minX) + pad),
+    dy: Math.round(-layout.bounds.minY) - (Math.round(-tb.minY) + pad),
+  };
 }
 
-let woodMaskCache: { layout: TreeLayout; canvas: HTMLCanvasElement } | null = null;
+let woodMaskCache: { layout: TreeLayout; layer: CachedLayer } | null = null;
 
 const OUTLINE_OFFSETS: Array<[number, number]> = [
   [-1, -1], [0, -1], [1, -1],
@@ -538,12 +564,15 @@ export function renderTree(
   ctx.clearRect(0, 0, width, height);
 
   if (!backgroundCache || backgroundCache.layout !== layout) {
-    backgroundCache = { layout, canvas: buildBackground(layout, width, height) };
+    backgroundCache = { layout, layer: buildBackground(layout) };
   }
-  ctx.drawImage(backgroundCache.canvas, 0, 0);
+  const bg = backgroundCache.layer;
+  // The cell-resolution scene upscales ×PIXEL; smoothing is off, so each of
+  // its pixels lands as one crisp fat pixel.
+  ctx.drawImage(bg.canvas, bg.dx, bg.dy, bg.canvas.width * PIXEL, bg.canvas.height * PIXEL);
 
   if (!woodMaskCache || woodMaskCache.layout !== layout) {
-    woodMaskCache = { layout, canvas: buildWoodMask(layout, width, height) };
+    woodMaskCache = { layout, layer: buildWoodMask(layout) };
   }
 
   ctx.save();
@@ -590,8 +619,9 @@ export function renderTree(
   // Pass 2 — one outline around the entire wood figure, then the wood itself
   // on top of the crown, so the tree reads as a single solid piece and every
   // branch stays readable against the foliage.
+  const mask = woodMaskCache.layer;
   for (const [dx, dy] of OUTLINE_OFFSETS) {
-    ctx.drawImage(woodMaskCache.canvas, dx * PIXEL, dy * PIXEL);
+    ctx.drawImage(mask.canvas, mask.dx + dx * PIXEL, mask.dy + dy * PIXEL);
   }
 
   ctx.save();
@@ -609,10 +639,11 @@ export function renderTree(
     drawTaperedPath(ctx, branch.path, branch.baseWidth, branch.tipWidth, branchColor(branch.branchId));
   }
 
-  // Pass 3 — connectors and clickable fruits on the very top.
+  // Pass 3 — connectors and clickable fruits on the very top. Connectors are
+  // two cells thick so it's easy to trace which fruit hangs off which branch.
   for (const branch of layout.branches) {
     for (const twig of branch.twigs) {
-      drawPixelLine(ctx, twig.stub[0], twig.stub[1], PIXEL, branchStubColor(branch.branchId));
+      drawPixelLine(ctx, twig.stub[0], twig.stub[1], PIXEL * 2, branchStubColor(branch.branchId));
     }
     for (const twig of branch.twigs) {
       const completed = Boolean(options.progress[twig.achievementId]);

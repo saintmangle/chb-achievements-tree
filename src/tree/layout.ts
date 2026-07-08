@@ -20,6 +20,10 @@ const TRUNK_BASE_WIDTH = 58;
 const TRUNK_TOP_WIDTH = 34;
 // The trunk flares toward the ground like the reference art.
 const TRUNK_FLARE = 1.35;
+// Above the last branch the trunk keeps going as a thin tapering leader —
+// without it the top ends in a flat stump.
+const TRUNK_TIP_HEIGHT = 70;
+const TRUNK_TIP_WIDTH = 6;
 
 // Branches attach along the trunk and fan out without crossing: on each side
 // the lowest branch grows almost horizontally and every branch above it grows
@@ -33,11 +37,14 @@ const BRANCH_ANGLE_TO = (55 * Math.PI) / 180;
 const BRANCH_BASE_LENGTH = 90;
 const BRANCH_LENGTH_PER_TWIG = 16;
 const BRANCH_SEGMENT_LENGTH = 13;
-const BRANCH_JITTER = 0.18;
+const BRANCH_JITTER = 0.1;
 // Branches arc upward as they grow (0 = straight, 1 = fully turned up by the
-// tip). Only the near-horizontal low limbs curl hard; the already-steep top
-// branches barely bend, so branches from the two sides never cross up top.
-const BRANCH_CURL = 0.5;
+// tip). The SAME curl fraction for every branch is what guarantees they never
+// cross: each branch's direction stays a fixed blend between its own start
+// angle and vertical, so if branch A starts below branch B it also ends below
+// it — the angular lanes never converge. (Scaling curl per branch broke this
+// and made mid-crown branches meet.)
+const BRANCH_CURL = 0.35;
 // The first stretch of every limb is bare wood, like on a real tree — leaves
 // and fruits only start past this fraction of the branch length.
 const BRANCH_BARE_FRACTION = 0.3;
@@ -77,6 +84,15 @@ function buildTrunk(): TrunkLayout {
     path.push({ x, y: -t * TRUNK_HEIGHT });
     const flare = 1 + (TRUNK_FLARE - 1) * Math.max(0, 1 - t / 0.14);
     widths.push((TRUNK_BASE_WIDTH + (TRUNK_TOP_WIDTH - TRUNK_BASE_WIDTH) * t) * flare);
+  }
+  // The tapering leader on top; crown foliage is allowed to close over it.
+  const tipSegments = 6;
+  for (let i = 1; i <= tipSegments; i++) {
+    const t = i / tipSegments;
+    x += (rng() - 0.5) * 2;
+    x *= 0.9;
+    path.push({ x, y: -(TRUNK_HEIGHT + t * TRUNK_TIP_HEIGHT) });
+    widths.push(TRUNK_TOP_WIDTH + (TRUNK_TIP_WIDTH - TRUNK_TOP_WIDTH) * t);
   }
   return { path, widths };
 }
@@ -411,10 +427,7 @@ export function buildTreeLayout(
       const angle = BRANCH_ANGLE_FROM + frac * (BRANCH_ANGLE_TO - BRANCH_ANGLE_FROM);
       // Canvas y grows downward, so "up and outward" is negative sin.
       const dirAngle = isLeft ? Math.PI + angle : -angle;
-      // Low near-horizontal limbs arc up hard; the already-steep top branches
-      // barely bend, so the two sides never curl into each other at the top.
-      const curl = BRANCH_CURL * (1 - frac * 0.85);
-      return buildBranch(branch, byBranch.get(branch.id) ?? [], attach, dirAngle, curl);
+      return buildBranch(branch, byBranch.get(branch.id) ?? [], attach, dirAngle, BRANCH_CURL);
     });
 
   // Order matters for the trunk stripes: left side first, then right —
@@ -479,11 +492,14 @@ export function buildTreeLayout(
   // Filler foliage keeps clear of the settled fruit positions so every fruit
   // sits in its own visual pocket (owned tufts hug their fruit on purpose),
   // and ALL foliage keeps clear of the trunk — leaves start out on the limbs,
-  // not at the trunk, like on a real tree.
+  // not at the trunk, like on a real tree. The clearance stops short of the
+  // trunk's top, so the crown closes over the tapering leader instead of
+  // leaving a bare channel around it.
+  const trunkClearancePath = trunk.path.slice(0, Math.floor(TRUNK_SEGMENTS * 0.86));
   for (const branch of branchLayouts) {
     branch.foliage = branch.foliage.filter(
       (leaf) =>
-        trunk.path.every((p) => dist(leaf.center, p) >= TRUNK_FOLIAGE_CLEARANCE) &&
+        trunkClearancePath.every((p) => dist(leaf.center, p) >= TRUNK_FOLIAGE_CLEARANCE) &&
         (leaf.ownerId !== undefined ||
           allTwigs.every((t) => dist(leaf.center, t.leaf.center) >= FOLIAGE_CLEARANCE)),
     );
@@ -509,13 +525,15 @@ export function buildTreeLayout(
   for (const g of groundRoots) {
     for (const p of g.path) expandBounds(bounds, p, g.baseWidth);
   }
-  // Roomy margin: the pixel background (sky, clouds, grass, stones) is painted
-  // across the whole bounds, so the tree gets a scene around it.
-  const margin = 140;
+  // Tree-only extents drive "показать всё"; the painted scene (sky, clouds,
+  // grass, stones) continues far beyond them, so even fully zoomed out the
+  // viewport stays inside the artwork instead of falling off its edge.
+  const treeBounds: TreeBounds = { ...bounds };
+  const margin = 700;
   bounds.minX -= margin;
   bounds.maxX += margin;
   bounds.minY -= margin;
   bounds.maxY += margin;
 
-  return { trunk, branches: branchLayouts, roots: rootLayouts, groundRoots, bounds };
+  return { trunk, branches: branchLayouts, roots: rootLayouts, groundRoots, bounds, treeBounds };
 }
