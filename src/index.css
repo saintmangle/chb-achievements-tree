@@ -1,15 +1,18 @@
 :root {
-  --bg-top: #0c1912;
-  --bg-bottom: #060d09;
-  --text: #d9e4d6;
-  --text-dim: #8fa08a;
-  --panel: #101e15;
-  --panel-border: #24402c;
-  --accent-green: #4fae6b;
-  --accent-green-bright: #6fd98a;
+  /* Neutral gray chrome — the tree carries all the color. */
+  --bg-top: #16181a;
+  --bg-bottom: #0a0b0c;
+  --text: #d7dcdf;
+  --text-dim: #949da2;
+  --panel: #17191b;
+  --panel-border: #363b3f;
+  --accent: #aeb7bc;
+  --accent-bright: #e4e9ec;
+  /* The one green left in the UI: "done" state, tied to the tree's leaves. */
+  --done-green: #57cf7c;
   --sky: #2f6bab;
   --danger: #d9776a;
-  --ink-on-accent: #06210f;
+  --ink-on-accent: #101315;
 
   color-scheme: dark;
   font: 15px/1.4 ui-monospace, "Courier New", monospace;
@@ -57,7 +60,7 @@ body {
   text-overflow: ellipsis;
   flex: 1;
   min-width: 0;
-  color: var(--accent-green-bright);
+  color: var(--accent-bright);
 }
 
 .fit-all-btn,
@@ -70,7 +73,7 @@ body {
 .fit-all-btn {
   background: var(--panel-border);
   color: var(--text);
-  border: 1px solid var(--accent-green);
+  border: 1px solid var(--accent);
   border-radius: 4px;
   padding: 6px 14px;
   min-height: 44px;
@@ -78,7 +81,7 @@ body {
 }
 
 .fit-all-btn:hover {
-  background: var(--accent-green);
+  background: var(--accent);
   color: var(--ink-on-accent);
 }
 
@@ -131,7 +134,7 @@ body {
   pointer-events: auto;
   position: relative;
   background: var(--panel);
-  border: 2px solid var(--accent-green);
+  border: 2px solid var(--accent);
   border-radius: 6px;
   padding: 12px 14px;
   width: max-content;
@@ -162,7 +165,7 @@ body {
 }
 
 .tooltip-subtitle {
-  color: var(--accent-green);
+  color: var(--accent);
   font-size: 11px;
   margin-bottom: 4px;
 }
@@ -216,8 +219,8 @@ body {
   padding: 8px;
   min-height: 44px;
   background: none;
-  border: 1px dashed var(--accent-green);
-  color: var(--accent-green-bright);
+  border: 1px dashed var(--accent);
+  color: var(--accent-bright);
   border-radius: 4px;
   cursor: pointer;
   font-family: inherit;
@@ -268,8 +271,8 @@ body {
 }
 
 .add-root-actions button[type="submit"] {
-  border-color: var(--accent-green);
-  color: var(--accent-green-bright);
+  border-color: var(--accent);
+  color: var(--accent-bright);
 }
 
 .add-root-actions button:disabled {
@@ -333,7 +336,7 @@ body {
 .list-panel-header h2 {
   margin: 0;
   font-size: 13px;
-  color: var(--accent-green-bright);
+  color: var(--accent-bright);
 }
 
 .list-panel-close {
@@ -361,7 +364,7 @@ body {
   gap: 8px;
   margin: 20px 0 4px;
   font-size: 13px;
-  color: var(--accent-green-bright);
+  color: var(--accent-bright);
 }
 
 .branch-dot {
@@ -406,7 +409,7 @@ body {
 }
 
 .list-row-done .list-row-title {
-  color: var(--accent-green);
+  color: var(--done-green);
 }
 
 .list-row-desc {

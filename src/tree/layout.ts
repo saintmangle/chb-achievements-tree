@@ -16,18 +16,20 @@ import type {
 // spacing between elements means the fat pixels don't pile onto each other.
 const TRUNK_HEIGHT = 520;
 const TRUNK_SEGMENTS = 40;
-const TRUNK_BASE_WIDTH = 44;
-const TRUNK_TOP_WIDTH = 24;
+const TRUNK_BASE_WIDTH = 58;
+const TRUNK_TOP_WIDTH = 34;
 // The trunk flares toward the ground like the reference art.
 const TRUNK_FLARE = 1.35;
 
 // Branches attach along the trunk and fan out without crossing: on each side
 // the lowest branch grows almost horizontally and every branch above it grows
-// steeper, so each one stays inside its own angular sector.
-const BRANCH_ATTACH_FROM = 0.42;
+// steeper, so each one stays inside its own angular sector. The steepest
+// branch stays under ~55° — near-vertical branches from the two sides used to
+// bunch into a parallel broom at the crown top.
+const BRANCH_ATTACH_FROM = 0.38;
 const BRANCH_ATTACH_TO = 0.97;
 const BRANCH_ANGLE_FROM = (9 * Math.PI) / 180;
-const BRANCH_ANGLE_TO = (74 * Math.PI) / 180;
+const BRANCH_ANGLE_TO = (55 * Math.PI) / 180;
 const BRANCH_BASE_LENGTH = 90;
 const BRANCH_LENGTH_PER_TWIG = 16;
 const BRANCH_SEGMENT_LENGTH = 13;
@@ -52,6 +54,10 @@ const MIN_FRUIT_DIST = 36;
 // Decorative foliage keeps this distance from achievement "fruits" so the
 // clickable spots stay visually clean.
 const FOLIAGE_CLEARANCE = 18;
+
+// No foliage this close to the trunk centerline — the trunk rises cleanly
+// through the crown, with leaves starting out on the limbs.
+const TRUNK_FOLIAGE_CLEARANCE = 64;
 
 const ROOT_SEGMENT_LENGTH = 12;
 
@@ -308,34 +314,47 @@ function buildRoot(custom: CustomAchievement, attach: Point, index: number): Roo
 }
 
 /**
- * The trunk continues underground as a thick taproot and only then splits
- * into individual roots, so the tree reads as one piece. Custom-achievement
- * roots also grow from the fork point.
+ * The trunk continues underground as a short root collar that immediately
+ * splits into a wide fan of main roots — the crown mirrored underground, like
+ * the reference art. Main roots dive as they spread and fork once into
+ * thinner side roots. Custom-achievement roots also grow from the fork point.
  */
 function buildGroundRoots(base: Point): { layouts: GroundRootLayout[]; fork: Point } {
   const taproot: Point[] = [
     { x: base.x, y: base.y },
-    { x: base.x + 1.5, y: base.y + 18 },
-    { x: base.x - 1, y: base.y + 37 },
-    { x: base.x + 0.5, y: base.y + 56 },
+    { x: base.x + 1.5, y: base.y + 16 },
+    { x: base.x - 1, y: base.y + 32 },
   ];
   const fork = taproot[taproot.length - 1];
   const layouts: GroundRootLayout[] = [
-    { path: taproot, baseWidth: TRUNK_BASE_WIDTH * TRUNK_FLARE, tipWidth: 20 },
+    { path: taproot, baseWidth: TRUNK_BASE_WIDTH * TRUNK_FLARE, tipWidth: TRUNK_BASE_WIDTH },
   ];
-  const angles = [-0.95, -0.5, 0.05, 0.5, 0.95];
+  const angles = [-1.3, -0.85, -0.4, 0.05, 0.45, 0.9, 1.3];
   angles.forEach((rel, i) => {
+    const main = buildWalkPath(
+      fork,
+      Math.PI / 2 + rel,
+      8 + (i % 4),
+      ROOT_SEGMENT_LENGTH + 2,
+      hashString(`groundroot:${i}`),
+      0.3,
+      Math.PI / 2,
+      0.4,
+    );
+    layouts.push({ path: main, baseWidth: 15, tipWidth: 3 });
+    // One fork per main root: a thinner side root splitting off midway.
+    const mid = main[Math.floor(main.length * 0.5)];
     layouts.push({
       path: buildWalkPath(
-        fork,
-        Math.PI / 2 + rel,
-        6 + (i % 3),
+        mid,
+        Math.PI / 2 + rel + (i % 2 === 0 ? 0.6 : -0.6),
+        5 + (i % 2),
         ROOT_SEGMENT_LENGTH,
-        hashString(`groundroot:${i}`),
-        0.25,
+        hashString(`groundfork:${i}`),
+        0.3,
       ),
-      baseWidth: 11,
-      tipWidth: 3,
+      baseWidth: 8,
+      tipWidth: 2.5,
     });
   });
   return { layouts, fork };
@@ -458,12 +477,15 @@ export function buildTreeLayout(
   }
 
   // Filler foliage keeps clear of the settled fruit positions so every fruit
-  // sits in its own visual pocket (owned tufts hug their fruit on purpose).
+  // sits in its own visual pocket (owned tufts hug their fruit on purpose),
+  // and ALL foliage keeps clear of the trunk — leaves start out on the limbs,
+  // not at the trunk, like on a real tree.
   for (const branch of branchLayouts) {
     branch.foliage = branch.foliage.filter(
       (leaf) =>
-        leaf.ownerId !== undefined ||
-        allTwigs.every((t) => dist(leaf.center, t.leaf.center) >= FOLIAGE_CLEARANCE),
+        trunk.path.every((p) => dist(leaf.center, p) >= TRUNK_FOLIAGE_CLEARANCE) &&
+        (leaf.ownerId !== undefined ||
+          allTwigs.every((t) => dist(leaf.center, t.leaf.center) >= FOLIAGE_CLEARANCE)),
     );
   }
 
