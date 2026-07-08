@@ -478,6 +478,7 @@ function buildWoodMask(layout: TreeLayout): CachedLayer {
   ctx.translate(Math.round(-tb.minX) + pad, Math.round(-tb.minY) + pad);
   const color = COLORS.woodOutline;
   for (const g of layout.groundRoots) drawTaperedPath(ctx, g.path, g.baseWidth, g.tipWidth, color);
+  for (const f of layout.crownForks) drawTaperedPath(ctx, f.path, f.baseWidth, f.tipWidth, color);
   for (const r of layout.roots) drawTaperedPath(ctx, r.path, r.baseWidth, r.tipWidth, color);
   const { trunk } = layout;
   for (let i = 0; i < trunk.path.length - 1; i++) {
@@ -630,6 +631,9 @@ export function renderTree(
   const rootColor = rootWoodColor(layout);
   for (const g of layout.groundRoots) {
     drawTaperedPath(ctx, g.path, g.baseWidth, g.tipWidth, rootColor);
+  }
+  for (const f of layout.crownForks) {
+    drawTaperedPath(ctx, f.path, f.baseWidth, f.tipWidth, rootColor);
   }
   for (const root of layout.roots) {
     drawTaperedPath(ctx, root.path, root.baseWidth, root.tipWidth, rootColor);

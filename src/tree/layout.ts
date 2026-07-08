@@ -20,10 +20,9 @@ const TRUNK_BASE_WIDTH = 58;
 const TRUNK_TOP_WIDTH = 34;
 // The trunk flares toward the ground like the reference art.
 const TRUNK_FLARE = 1.35;
-// Above the last branch the trunk keeps going as a thin tapering leader —
-// without it the top ends in a flat stump.
-const TRUNK_TIP_HEIGHT = 70;
-const TRUNK_TIP_WIDTH = 6;
+// At the very top the trunk splits into two thick decorative limbs that rise
+// into the crown — without them the top ends in a flat stump.
+const CROWN_FORK_ANGLES = [-0.55, 0.5];
 
 // Branches attach along the trunk and fan out without crossing: on each side
 // the lowest branch grows almost horizontally and every branch above it grows
@@ -58,6 +57,11 @@ const CHAIN_FORK_SPREAD = 0.9;
 // world units across, so this guarantees a clear gap of several pixels).
 const MIN_FRUIT_DIST = 36;
 
+// A fruit also keeps this far from every OTHER branch's woody path (plus that
+// branch's half-width), so one branch's achievements never sit on top of a
+// neighbouring branch.
+const FRUIT_BRANCH_CLEARANCE = 26;
+
 // Decorative foliage keeps this distance from achievement "fruits" so the
 // clickable spots stay visually clean.
 const FOLIAGE_CLEARANCE = 18;
@@ -84,15 +88,6 @@ function buildTrunk(): TrunkLayout {
     path.push({ x, y: -t * TRUNK_HEIGHT });
     const flare = 1 + (TRUNK_FLARE - 1) * Math.max(0, 1 - t / 0.14);
     widths.push((TRUNK_BASE_WIDTH + (TRUNK_TOP_WIDTH - TRUNK_BASE_WIDTH) * t) * flare);
-  }
-  // The tapering leader on top; crown foliage is allowed to close over it.
-  const tipSegments = 6;
-  for (let i = 1; i <= tipSegments; i++) {
-    const t = i / tipSegments;
-    x += (rng() - 0.5) * 2;
-    x *= 0.9;
-    path.push({ x, y: -(TRUNK_HEIGHT + t * TRUNK_TIP_HEIGHT) });
-    widths.push(TRUNK_TOP_WIDTH + (TRUNK_TIP_WIDTH - TRUNK_TOP_WIDTH) * t);
   }
   return { path, widths };
 }
@@ -225,6 +220,12 @@ function buildBranch(
 
   const twigs: TwigLayout[] = [];
 
+  // Chains extend along the branch's END direction (the curled-up one), so
+  // they stay inside its lane instead of drifting over the branch below.
+  const tipA = path[path.length - 2];
+  const tipB = path[path.length - 1];
+  const tipDir = Math.atan2(tipB.y - tipA.y, tipB.x - tipA.x);
+
   const placeChain = (achievement: Achievement, from: Point, leafCenter: Point, parentId?: string) => {
     twigs.push({
       achievementId: achievement.id,
@@ -240,7 +241,7 @@ function buildBranch(
     const stubAngle = Math.atan2(leafCenter.y - from.y, leafCenter.x - from.x);
     // Chains keep growing mostly along the branch's own direction so they
     // stay inside its sector and can't wander into a neighbouring branch.
-    const baseAngle = blendAngle(stubAngle, dirAngle, 0.65);
+    const baseAngle = blendAngle(stubAngle, tipDir, 0.65);
     children.forEach((child, k) => {
       const spread = (k - (children.length - 1) / 2) * CHAIN_FORK_SPREAD;
       const jitter = (mulberry32(hashString(`chain:${child.id}`))() - 0.5) * 0.3;
@@ -460,6 +461,27 @@ export function buildTreeLayout(
         anyMoved = true;
       }
     }
+    // A fruit sitting on a FOREIGN branch's woody path gets pushed off it,
+    // so e.g. sport achievements never lie across the travel branch.
+    for (const twig of allTwigs) {
+      const c = twig.leaf.center;
+      for (const branch of branchLayouts) {
+        if (branch.branchId === twig.branchId) continue;
+        const lastIdx = Math.max(1, branch.path.length - 1);
+        branch.path.forEach((p, k) => {
+          const width = branch.baseWidth + (branch.tipWidth - branch.baseWidth) * (k / lastIdx);
+          const clear = FRUIT_BRANCH_CLEARANCE + width / 2;
+          const dx = c.x - p.x;
+          const dy = c.y - p.y;
+          const d = Math.hypot(dx, dy);
+          if (d >= clear || d < 0.01) return;
+          const push = (clear - d) / d;
+          c.x += dx * push;
+          c.y += dy * push;
+          anyMoved = true;
+        });
+      }
+    }
     if (!anyMoved) break;
   }
   const twigById = new Map(allTwigs.map((t) => [t.achievementId, t]));
@@ -505,6 +527,25 @@ export function buildTreeLayout(
     );
   }
 
+  // The trunk tops out by splitting into two thick limbs that rise into the
+  // crown — a natural fork instead of a flat stump.
+  const trunkTop = trunk.path[trunk.path.length - 1];
+  const trunkTopWidth = trunk.widths[trunk.widths.length - 1];
+  const crownForks: GroundRootLayout[] = CROWN_FORK_ANGLES.map((rel, i) => ({
+    path: buildWalkPath(
+      trunkTop,
+      -Math.PI / 2 + rel,
+      6,
+      12,
+      hashString(`crownfork:${i}`),
+      0.12,
+      -Math.PI / 2,
+      0.5,
+    ),
+    baseWidth: trunkTopWidth * 0.72,
+    tipWidth: 6,
+  }));
+
   const ground = buildGroundRoots(trunk.path[0]);
   const groundRoots = ground.layouts;
   const rootLayouts: RootLayout[] = customAchievements.map((custom, i) =>
@@ -513,6 +554,9 @@ export function buildTreeLayout(
 
   const bounds: TreeBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
   for (const p of trunk.path) expandBounds(bounds, p, TRUNK_BASE_WIDTH);
+  for (const f of crownForks) {
+    for (const p of f.path) expandBounds(bounds, p, f.baseWidth);
+  }
   for (const b of branchLayouts) {
     for (const p of b.path) expandBounds(bounds, p, b.baseWidth);
     for (const twig of b.twigs) expandBounds(bounds, twig.leaf.center, twig.leaf.radius + 8);
@@ -535,5 +579,5 @@ export function buildTreeLayout(
   bounds.minY -= margin;
   bounds.maxY += margin;
 
-  return { trunk, branches: branchLayouts, roots: rootLayouts, groundRoots, bounds, treeBounds };
+  return { trunk, branches: branchLayouts, roots: rootLayouts, groundRoots, crownForks, bounds, treeBounds };
 }

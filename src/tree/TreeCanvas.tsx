@@ -39,6 +39,7 @@ export const TreeCanvas = forwardRef<TreeCanvasHandle, TreeCanvasProps>(function
   const minScaleRef = useRef(0.15);
 
   const pointers = useRef(new Map<number, Point>());
+  const lastTapRef = useRef<{ time: number; p: Point } | null>(null);
   const dragState = useRef<{ startScreen: Point; startTime: number; moved: boolean } | null>(null);
   const panState = useRef<{ lastX: number; lastY: number } | null>(null);
   const pinchState = useRef<{
@@ -200,7 +201,18 @@ export const TreeCanvas = forwardRef<TreeCanvasHandle, TreeCanvasProps>(function
     if (pointers.current.size === 0) panState.current = null;
 
     if (wasSingle && drag && !drag.moved && Date.now() - drag.startTime < TAP_MAX_DURATION) {
-      handleTap(toContainerPoint(e.clientX, e.clientY));
+      const p = toContainerPoint(e.clientX, e.clientY);
+      const now = Date.now();
+      const lastTap = lastTapRef.current;
+      // Double tap = "показать всё": reset the camera to fit the whole tree.
+      if (lastTap && now - lastTap.time < 350 && dist(lastTap.p, p) < 40) {
+        lastTapRef.current = null;
+        onSelect(null, null);
+        fitAll();
+      } else {
+        lastTapRef.current = { time: now, p };
+        handleTap(p);
+      }
     }
     dragState.current = null;
   };

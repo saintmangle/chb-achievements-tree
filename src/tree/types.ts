@@ -67,6 +67,8 @@ export interface TreeLayout {
   branches: BranchLayout[];
   roots: RootLayout[];
   groundRoots: GroundRootLayout[];
+  /** Two decorative limbs the trunk splits into at its top. */
+  crownForks: GroundRootLayout[];
   /** Full canvas extents including the scenery apron around the tree. */
   bounds: TreeBounds;
   /** Extents of the tree itself — what "показать всё" fits to the screen. */

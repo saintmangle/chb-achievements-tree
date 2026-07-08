@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { AchievementForm } from "./components/AchievementForm";
 import { AchievementList } from "./components/AchievementList";
 import { Tooltip } from "./components/Tooltip";
@@ -7,7 +7,7 @@ import { useCustomAchievements } from "./hooks/useCustomAchievements";
 import { useProgress } from "./hooks/useProgress";
 import { useTelegramAuth } from "./hooks/useTelegramAuth";
 import { buildTreeLayout } from "./tree/layout";
-import { TreeCanvas, type TreeCanvasHandle } from "./tree/TreeCanvas";
+import { TreeCanvas } from "./tree/TreeCanvas";
 import type { HitTarget } from "./tree/renderer";
 import type { Point } from "./tree/types";
 
@@ -48,7 +48,6 @@ export default function App() {
 
   const [selection, setSelection] = useState<Selection | null>(null);
   const [showList, setShowList] = useState(false);
-  const treeRef = useRef<TreeCanvasHandle>(null);
 
   const completedCount =
     Object.keys(progress).length + customAchievements.filter((c) => c.status).length;
@@ -111,14 +110,10 @@ export default function App() {
         <button className="fit-all-btn" onClick={() => setShowList(true)}>
           список · {completedCount}/{totalCount}
         </button>
-        <button className="fit-all-btn" onClick={() => treeRef.current?.fitAll()}>
-          показать всё
-        </button>
       </header>
 
       <div className="tree-wrapper">
         <TreeCanvas
-          ref={treeRef}
           layout={layout}
           progress={progress}
           activeId={selection?.target.id ?? null}
