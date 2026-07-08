@@ -645,10 +645,15 @@ export function renderTree(
 
   // Pass 3 — connectors and clickable fruits on the very top. Connectors are
   // two cells thick so it's easy to trace which fruit hangs off which branch.
+  // ALL connectors are drawn before ANY fruit, so a later branch's connector
+  // can never land on top of an earlier branch's fruit — every fruit stays on
+  // top of everything.
   for (const branch of layout.branches) {
     for (const twig of branch.twigs) {
       drawPixelLine(ctx, twig.stub[0], twig.stub[1], PIXEL * 2, branchStubColor(branch.branchId));
     }
+  }
+  for (const branch of layout.branches) {
     for (const twig of branch.twigs) {
       const completed = Boolean(options.progress[twig.achievementId]);
       drawAchievementFruit(ctx, twig.leaf.center, completed, options.highlightedId === twig.achievementId);
