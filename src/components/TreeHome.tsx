@@ -28,6 +28,7 @@ export function TreeHome({ branches, selected, ratios, onSelect, onOpen }: { bra
     regions.current=labels;
   }
   const latest = useRef(ratios); latest.current = ratios;
+  const selectedCloud = useRef(selected); selectedCloud.current = selected;
   function paint() {
     const ctx = canvas.current?.getContext('2d'), source = original.current; if (!ctx || !source) return;
     const out = new ImageData(new Uint8ClampedArray(source.data), source.width, source.height);
@@ -44,12 +45,13 @@ export function TreeHome({ branches, selected, ratios, onSelect, onOpen }: { bra
       const earned=ratio>=threshold;
       const color=earned?colors[nearest]:colors[nearest].map((v,k)=>[137,147,126][k]*.75+v*.25);
       const shade=Math.min(1.1,g/107);
-      out.data[i]=color[0]*shade;out.data[i+1]=color[1]*shade;out.data[i+2]=color[2]*shade;
+      const highlight=selectedCloud.current===nearest+1 ? 1 : 0;
+      out.data[i]=color[0]*shade+highlight*35;out.data[i+1]=color[1]*shade+highlight*35;out.data[i+2]=color[2]*shade+highlight*24;
     }
     ctx.putImageData(out,0,0);
   }
   useEffect(()=>{const image=new Image();image.onload=()=>{const ctx=canvas.current?.getContext('2d');if(!ctx)return;ctx.drawImage(image,0,0,800,1000);original.current=ctx.getImageData(0,0,800,1000);segment(original.current);paint();};image.src=import.meta.env.BASE_URL+'art/tree.png';},[]);
-  useEffect(()=>{paint();},[ratios]);
+  useEffect(()=>{paint();},[ratios,selected]);
   return <div className="tree-stage">
     <canvas ref={canvas} width={800} height={1000} role="img" aria-label="Твоё дерево достижений: листва окрашивается по мере выполнения" />
     {branches.filter(b=>b.id<=15&&b.active!==false).map(b=>{const p=treeAreas[b.id-1];if(!p)return null;return <button key={b.id} className={'tree-hit '+(selected===b.id?'selected':'')} style={{left:p[0]+'%',top:p[1]+'%',width:p[2]+'%',height:p[3]+'%'}} aria-label={b.title} aria-pressed={selected===b.id} onClick={()=>selected===b.id?onOpen(b.id):onSelect(b.id)}>{selected===b.id&&<span>{b.title.replace(/^ветка\s*/i,'')}</span>}</button>})}
