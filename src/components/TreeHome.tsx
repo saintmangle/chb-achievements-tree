@@ -52,8 +52,8 @@ export function TreeHome({ branches, selected, ratios, onSelect, onOpen }: { bra
   }
   useEffect(()=>{const image=new Image();image.onload=()=>{const ctx=canvas.current?.getContext('2d');if(!ctx)return;ctx.drawImage(image,0,0,800,1000);original.current=ctx.getImageData(0,0,800,1000);segment(original.current);paint();};image.src=import.meta.env.BASE_URL+'art/tree.png';},[]);
   useEffect(()=>{paint();},[ratios,selected]);
-  return <div className="tree-stage">
+  return <div className="tree-window"><div className="tree-stage">
     <canvas ref={canvas} width={800} height={1000} role="img" aria-label="Твоё дерево достижений: листва окрашивается по мере выполнения" />
     {branches.filter(b=>b.id<=15&&b.active!==false).map(b=>{const p=treeAreas[b.id-1];if(!p)return null;return <button key={b.id} className={'tree-hit '+(selected===b.id?'selected':'')} style={{left:p[0]+'%',top:p[1]+'%',width:p[2]+'%',height:p[3]+'%'}} aria-label={b.title} aria-pressed={selected===b.id} onClick={()=>selected===b.id?onOpen(b.id):onSelect(b.id)}>{selected===b.id&&<span>{b.title.replace(/^ветка\s*/i,'')}</span>}</button>})}
-  </div>;
+  </div></div>;
 }

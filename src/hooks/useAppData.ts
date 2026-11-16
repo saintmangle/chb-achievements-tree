@@ -6,9 +6,10 @@ import type { Achievement, Branch, CustomAchievement } from '../types';
 export interface CatalogAchievement extends Achievement { icon_url?: string | null; active?: boolean }
 export interface CatalogBranch extends Branch { sort_order?: number; color?: string; background_url?: string | null; active?: boolean }
 interface Data { branches: CatalogBranch[]; achievements: CatalogAchievement[]; progress: Record<string, boolean>; custom: CustomAchievement[]; notes: Record<string, string>; visuals: Record<number, number>; admin: boolean }
+function branchLabels(branches: CatalogBranch[]) { return branches.map(b => b.id === 9 && b.title === 'Ветка знаний' ? { ...b, title: 'Ветка знания' } : b); }
 const initial: Data = { branches: seed.branches, achievements: seed.achievements, progress: {}, custom: [], notes: {}, visuals: {}, admin: false };
 const storageKey = 'chb-redesign-demo-v1';
-function readDemo(): Data { try { const saved = JSON.parse(localStorage.getItem(storageKey) || 'null'); return saved?.achievements ? { ...initial, ...saved, admin: true } : { ...initial, admin: true }; } catch { return { ...initial, admin: true }; } }
+function readDemo(): Data { try { const saved = JSON.parse(localStorage.getItem(storageKey) || 'null'); return saved?.achievements ? { ...initial, ...saved, branches: branchLabels(saved.branches || initial.branches), admin: true } : { ...initial, admin: true }; } catch { return { ...initial, admin: true }; } }
 export function useAppData(userId: number | null) {
   const [data, setData] = useState<Data>(isDemo ? readDemo : initial), [loading, setLoading] = useState(true), [ready, setReady] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const lock = useRef(false), state = useRef(data); state.current = data;
@@ -26,7 +27,7 @@ export function useAppData(userId: number | null) {
     ]);
     const fail = results.find(r => r.error); if (fail?.error) throw new Error('Не удалось загрузить данные. Проверь соединение; если это первое включение новой версии, нужна миграция базы.');
     const [b,a,p,c,n,v,ad] = results;
-    const next: Data = { branches: b.data as CatalogBranch[], achievements: a.data as CatalogAchievement[], progress: Object.fromEntries((p.data ?? []).map(x => [x.achievement_id, true])), custom: c.data as CustomAchievement[], notes: Object.fromEntries((n.data ?? []).map(x => [x.achievement_id, x.note])), visuals: Object.fromEntries((v.data ?? []).map(x => [x.branch_id, Number(x.ratio)])), admin: Boolean(ad.data) };
+    const next: Data = { branches: branchLabels(b.data as CatalogBranch[]), achievements: a.data as CatalogAchievement[], progress: Object.fromEntries((p.data ?? []).map(x => [x.achievement_id, true])), custom: c.data as CustomAchievement[], notes: Object.fromEntries((n.data ?? []).map(x => [x.achievement_id, x.note])), visuals: Object.fromEntries((v.data ?? []).map(x => [x.branch_id, Number(x.ratio)])), admin: Boolean(ad.data) };
     state.current = next; setData(next); setReady(true); setLoading(false);
   }, [userId]);
   useEffect(() => { if (userId) { setLoading(true); void reload().catch(e => { setError(e.message); setLoading(false); }); } }, [userId, reload]);
