@@ -30,3 +30,5 @@ h1{font-size:18px;line-height:1.7}h2,.toolbar h2{font-size:14px;line-height:1.7}
 
 /* Keep cloud titles inside the painted foliage without shrinking the glyphs. */
 .tree-stage .tree-hit span{width:100%;max-width:100%;padding:0;min-width:0;white-space:normal;overflow-wrap:anywhere;hyphens:manual;line-height:1.15;text-align:center}
+
+.tree-connector{position:absolute;inset:0;pointer-events:none;overflow:hidden}.tree-window .tree-selection-title,.tree-window .tree-selection-title:hover{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:max-content;max-width:84%;padding:0;border:0!important;border-radius:0;background:transparent!important;box-shadow:none;color:#fff!important;font-size:16px;line-height:1.65;text-align:center;text-wrap:balance;overflow-wrap:anywhere;text-shadow:2px 2px #202020,-2px -2px #202020,2px -2px #202020,-2px 2px #202020;z-index:2}
