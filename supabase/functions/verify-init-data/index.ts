@@ -72,7 +72,7 @@ async function verifyTelegramInitData(initData: string, botToken: string) {
 
   const authDate = Number(params.get("auth_date") ?? "0");
   const nowSeconds = Math.floor(Date.now() / 1000);
-  if (!authDate || nowSeconds - authDate > MAX_INIT_DATA_AGE_SECONDS) {
+  if (!Number.isSafeInteger(authDate) || authDate > nowSeconds + 60 || nowSeconds - authDate > MAX_INIT_DATA_AGE_SECONDS) {
     return { ok: false as const, reason: "stale init data" };
   }
 
@@ -85,7 +85,7 @@ async function verifyTelegramInitData(initData: string, botToken: string) {
   } catch {
     return { ok: false as const, reason: "malformed user" };
   }
-  if (!user?.id) return { ok: false as const, reason: "missing user id" };
+  if (!Number.isSafeInteger(user?.id) || user.id <= 0) return { ok: false as const, reason: "missing user id" };
 
   return { ok: true as const, user };
 }
