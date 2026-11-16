@@ -55,6 +55,6 @@ export function TreeHome({ branches, selected, ratios, onSelect, onOpen }: { bra
   useEffect(()=>{paint();},[ratios,selected]);
   return <TreeViewport>
     <canvas ref={canvas} width={800} height={1000} role="img" aria-label="Твоё дерево достижений: листва окрашивается по мере выполнения" />
-    {branches.filter(b=>b.id<=15&&b.active!==false).map(b=>{const p=treeAreas[b.id-1];if(!p)return null;return <button key={b.id} className={'tree-hit '+(selected===b.id?'selected':'')} style={{left:p[0]+'%',top:p[1]+'%',width:p[2]+'%',height:p[3]+'%'}} aria-label={b.title} aria-pressed={selected===b.id} onClick={()=>selected===b.id?onOpen(b.id):onSelect(b.id)}>{selected===b.id&&<span style={{fontSize:b.title.length>28?16:22}}>{b.title.replace(/^ветка\s*/i,'').replace(/\s*\([^)]*\)/g,'')}</span>}</button>})}
+    {branches.filter(b=>b.id<=15&&b.active!==false).map(b=>{const p=treeAreas[b.id-1];if(!p)return null;return <button key={b.id} className={'tree-hit '+(selected===b.id?'selected':'')} style={{left:p[0]+'%',top:p[1]+'%',width:p[2]+'%',height:p[3]+'%'}} aria-label={b.title} aria-pressed={selected===b.id} onClick={()=>selected===b.id?onOpen(b.id):onSelect(b.id)}>{selected===b.id&&<span style={{fontSize:b.title.length>28?16:22}}>{b.title.replace(/^ветка\s*/i,'').replace(/\s*\([^)]*\)/g,'').replace(/путешествия/gi,'путеше\u00adствия')}</span>}</button>})}
   </TreeViewport>;
 }
