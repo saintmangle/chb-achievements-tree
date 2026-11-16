@@ -6,3 +6,9 @@ dist/
 .DS_Store
 .claude/settings.local.json
 .claude/launch.json
+
+.cache/
+.env*
+!.env.example
+
+node_modules

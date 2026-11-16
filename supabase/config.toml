@@ -2,3 +2,6 @@ project_id = "akjclyufpvcmanyipumx"
 
 [functions.verify-init-data]
 verify_jwt = false
+
+[functions.telegram-bot]
+verify_jwt = false

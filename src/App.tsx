@@ -1,167 +1,50 @@
-import { useMemo, useState } from "react";
-import { AchievementForm } from "./components/AchievementForm";
-import { AchievementList } from "./components/AchievementList";
-import { Tooltip } from "./components/Tooltip";
-import { achievements, branches } from "./data/achievements";
-import { useCustomAchievements } from "./hooks/useCustomAchievements";
-import { useProgress } from "./hooks/useProgress";
-import { useTelegramAuth } from "./hooks/useTelegramAuth";
-import { buildTreeLayout } from "./tree/layout";
-import { TreeCanvas } from "./tree/TreeCanvas";
-import type { HitTarget } from "./tree/renderer";
-import type { Point } from "./tree/types";
-
-const achievementById = new Map(achievements.map((a) => [a.id, a]));
-const branchById = new Map(branches.map((b) => [b.id, b]));
-
-// Roots get visually crowded past this point, and it keeps the table tidy.
-const MAX_CUSTOM_ACHIEVEMENTS = 20;
-
-interface Selection {
-  target: HitTarget;
-  screen: Point;
-}
-
+import { useEffect, useRef, useState } from 'react';
+import { useTelegramAuth, isDemo } from './hooks/useTelegramAuth';
+import { useAppData } from './hooks/useAppData';
+import { TreeHome } from './components/TreeHome';
+import { AchievementGraph } from './components/AchievementGraph';
+import { AdminPanel } from './components/AdminPanel';
+import { achievementLink, decodeAchievement } from './lib/sharing';
+import { getTelegramWebApp } from './lib/telegram';
 export default function App() {
-  const { status, identity, error } = useTelegramAuth();
-  const telegramUserId = identity?.telegramUserId ?? null;
-
-  const {
-    progress,
-    toggleAchievement,
-    error: progressError,
-    clearError: clearProgressError,
-  } = useProgress(telegramUserId);
-  const {
-    items: customAchievements,
-    addCustom,
-    toggleCustom,
-    removeCustom,
-    error: customError,
-    clearError: clearCustomError,
-  } = useCustomAchievements(telegramUserId);
-
-  const layout = useMemo(
-    () => buildTreeLayout(branches, achievements, customAchievements),
-    [customAchievements],
-  );
-
-  const [selection, setSelection] = useState<Selection | null>(null);
-  const [showList, setShowList] = useState(false);
-
-  const completedCount =
-    Object.keys(progress).length + customAchievements.filter((c) => c.status).length;
-  const totalCount = achievements.length + customAchievements.length;
-
-  if (status === "loading") {
-    return <div className="status-screen">загружаем дерево…</div>;
-  }
-  if (status === "not-telegram") {
-    return (
-      <div className="status-screen">
-        Открой это приложение через Telegram-бота — вне Telegram оно не может подтвердить, кто ты.
-      </div>
-    );
-  }
-  if (status === "error") {
-    return <div className="status-screen">{error ?? "Что-то пошло не так"}</div>;
-  }
-
-  const selectedContent = (() => {
-    if (!selection) return null;
-    if (selection.target.kind === "achievement") {
-      const a = achievementById.get(selection.target.id);
-      if (!a) return null;
-      return {
-        title: `${a.id} · ${a.title}`,
-        subtitle: branchById.get(a.branch_id)?.title,
-        description: a.description as string | undefined,
-        completed: Boolean(progress[a.id]),
-        onToggle: () => toggleAchievement(a.id),
-      };
-    }
-    const custom = customAchievements.find((c) => c.id === selection.target.id);
-    if (!custom) return null;
-    return {
-      title: custom.text,
-      subtitle: "своё достижение",
-      description: undefined,
-      completed: custom.status,
-      onToggle: () => toggleCustom(custom.id),
-      onDelete: () => {
-        if (window.confirm("Удалить это достижение навсегда?")) {
-          removeCustom(custom.id);
-          setSelection(null);
-        }
-      },
-    };
-  })();
-
-  const notice = progressError ?? customError;
-  const dismissNotice = () => {
-    clearProgressError();
-    clearCustomError();
-  };
-
-  return (
-    <div className="app">
-      <header className="app-header">
-        <h1 className="app-title">Ачивки в реальной жизни</h1>
-        <button className="fit-all-btn" onClick={() => setShowList(true)}>
-          список · {completedCount}/{totalCount}
-        </button>
-      </header>
-
-      <div className="tree-wrapper">
-        <TreeCanvas
-          layout={layout}
-          progress={progress}
-          activeId={selection?.target.id ?? null}
-          onSelect={(target, screen) => {
-            if (!target || !screen) {
-              setSelection(null);
-              return;
-            }
-            setSelection({ target, screen });
-          }}
-        />
-        {selection && selectedContent && (
-          <Tooltip
-            title={selectedContent.title}
-            subtitle={selectedContent.subtitle}
-            description={selectedContent.description}
-            completed={selectedContent.completed}
-            onToggle={selectedContent.onToggle}
-            onDelete={"onDelete" in selectedContent ? selectedContent.onDelete : undefined}
-            onClose={() => setSelection(null)}
-          />
-        )}
-        {notice && (
-          <div className="notice" role="alert">
-            <span>{notice}</span>
-            <button className="notice-close" onClick={dismissNotice} aria-label="Закрыть">
-              ×
-            </button>
-          </div>
-        )}
-        {showList && (
-          <AchievementList
-            progress={progress}
-            customAchievements={customAchievements}
-            onToggle={toggleAchievement}
-            onToggleCustom={toggleCustom}
-            onRemoveCustom={removeCustom}
-            onClose={() => setShowList(false)}
-          />
-        )}
-      </div>
-
-      <footer className="app-footer">
-        <AchievementForm
-          onAdd={addCustom}
-          limitReached={customAchievements.length >= MAX_CUSTOM_ACHIEVEMENTS}
-        />
-      </footer>
-    </div>
-  );
+ const auth=useTelegramAuth(), app=useAppData(auth.identity?.telegramUserId??null);
+ const {data,busy}=app;
+ const [branch,setBranch]=useState<number|null>(null),[cloud,setCloud]=useState<number|null>(null),[selected,setSelected]=useState<string|null>(null),[admin,setAdmin]=useState(false),[draft,setDraft]=useState(''),[customText,setCustomText]=useState(''),[notice,setNotice]=useState('');
+ const linked=useRef(false), card=useRef<HTMLElement>(null);
+ useEffect(()=>{if(selected)card.current?.scrollIntoView({block:"nearest"});},[selected]);
+ const branches=data.branches.filter(b=>b.active!==false), active=data.achievements.filter(a=>a.active!==false);
+ const current=branches.find(b=>b.id===branch), personal=branch===15;
+ const items=personal?data.custom.map((a,i)=>({id:a.id,branch_id:15,order:i+1,title:a.text,description:'Твоё личное достижение',requires:null})):active.filter(a=>a.branch_id===branch);
+ const completed=personal?Object.fromEntries(data.custom.map(a=>[a.id,a.status])):data.progress;
+ const chosen=items.find(a=>a.id===selected);
+ function leave(){if(chosen&&draft!==(data.notes[chosen.id]||'')&&!window.confirm('Заметка не сохранена. Выйти?'))return false;setSelected(null);setNotice('');return true;}
+ function open(id:number){if(leave()){setBranch(id);setAdmin(false);}}
+ useEffect(()=>{setDraft(selected?data.notes[selected]||'':'');},[selected]);
+ useEffect(()=>{if(app.loading||!app.ready||linked.current||!auth.identity)return;linked.current=true;const params=new URLSearchParams(location.search);const start=getTelegramWebApp()?.initDataUnsafe.start_param||params.get('tgWebAppStartParam');const id=params.get('achievement')||(typeof start==='string'?decodeAchievement(start):null);if(id){const a=data.achievements.find(a=>a.id===id&&a.active!==false);if(a){setBranch(a.branch_id);setSelected(id);}else setNotice('Это достижение пока недоступно.');}},[app.loading,app.ready,auth.identity,data.achievements]);
+ useEffect(()=>{const back=getTelegramWebApp()?.BackButton;if(!back)return;const handler=()=>{if(admin)setAdmin(false);else if(leave())setBranch(null);};if(branch!==null||admin)back.show();else back.hide();back.onClick(handler);return()=>back.offClick(handler);});
+ if(auth.status!=='ready')return <main className="gate"><h1>Ачивки в реальной жизни</h1><p>{auth.status==='loading'?'Открываем дерево…':auth.error||'Открой миниапку через Telegram, чтобы сохранить свой прогресс.'}</p><a className="primary" href="https://t.me/chb_achievements_bot">Открыть бота ↗</a></main>;
+ if(app.loading)return <main className="gate"><p>Собираем твоё дерево…</p></main>;
+ if(!app.ready)return <main className="gate"><h1>Не удалось открыть дерево</h1><p role="alert">{app.error}</p><button onClick={()=>void app.reload().catch(e=>app.setError(e.message))}>Повторить загрузку</button></main>;
+ const ratios={...data.visuals};for(const b of branches){if(ratios[b.id]===undefined){const list=active.filter(a=>a.branch_id===b.id);ratios[b.id]=list.length?list.filter(a=>data.progress[a.id]).length/list.length:0;}}
+ return <main className="app">
+ {isDemo&&<div className="demo">Демо · данные хранятся только в этом браузере</div>}
+ <header><a href="https://t.me/chb_achievements_bot" className="brand">CHB<span> / достижения</span></a><span className="counter">{active.filter(a=>data.progress[a.id]).length} / {active.length}</span></header>
+ {app.error&&<div className="error" role="alert">{app.error}<button onClick={()=>{app.setError('');void app.reload().catch(e=>app.setError(e.message));}}>Повторить загрузку</button></div>}
+ {notice&&<p className="notice" role="status">{notice}</p>}
+ {admin?<AdminPanel achievements={data.achievements} branches={data.branches} busy={busy} onSave={app.saveCatalog} onClose={()=>setAdmin(false)}/>:branch===null?<>
+ <div className="intro"><h1>Жизнь — тоже прохождение.</h1><p>Выбери ветвь. Найди то, что уже случилось с тобой.</p></div>
+ <TreeHome branches={branches} selected={cloud} ratios={ratios} onSelect={setCloud} onOpen={open}/>
+ <div className="tree-caption">{cloud?<><strong>{branches.find(b=>b.id===cloud)?.title}</strong><button className="primary" onClick={()=>open(cloud)}>Открыть ветвь →</button></>:<p>Нажми на крону или корни дерева</p>}</div>
+ <div className="home-actions"><label>Все ветви<select value="" onChange={e=>open(Number(e.target.value))}><option value="" disabled>Выбрать ветвь…</option>{branches.map(b=><option key={b.id} value={b.id}>{b.title}</option>)}</select></label><button onClick={()=>open(15)}>＋ Мои достижения <small>{data.custom.length}/67</small></button></div>
+ </>:<section className="branch-screen" style={current?.background_url?{backgroundImage:`linear-gradient(#1b211ee6,#1b211ee6),url("${current.background_url.replaceAll('"','%22')}")`}:undefined}>
+ <div className="toolbar"><button onClick={()=>{if(leave())setBranch(null);}}>← Дерево</button><span className="muted">{items.filter(a=>completed[a.id]).length} / {items.length}</span></div>
+ <div className="branch-nav"><button aria-label="Предыдущая ветвь" onClick={()=>open(branches[(branches.findIndex(b=>b.id===branch)-1+branches.length)%branches.length].id)}>‹</button><select aria-label="Ветвь" value={branch} onChange={e=>open(Number(e.target.value))}>{branches.map(b=><option key={b.id} value={b.id}>{b.title}</option>)}</select><button aria-label="Следующая ветвь" onClick={()=>open(branches[(branches.findIndex(b=>b.id===branch)+1)%branches.length].id)}>›</button></div>
+ <p className="graph-hint">Тяни карту в стороны · все ачивки доступны сразу</p>
+ <AchievementGraph items={items} title={current?.title||'Мои достижения'} selected={selected} completed={completed} onSelect={id=>{if(leave())setSelected(id);}}/>
+ {personal&&<form className="custom-form" onSubmit={async e=>{e.preventDefault();if(await app.addCustom(customText))setCustomText('');}}><label>Своя ачивка · {data.custom.length}/67<input maxLength={280} required value={customText} onChange={e=>setCustomText(e.target.value)} placeholder="Что хочется однажды отметить?"/></label><button className="primary" disabled={busy||data.custom.length>=67||!customText.trim()}>Добавить</button></form>}
+ {chosen&&<article ref={card} className="achievement-card" key={chosen.id}><button className="close" aria-label="Закрыть достижение" onClick={leave}>×</button><small>{completed[chosen.id]?'✓ ВЫПОЛНЕНО':'ЕЩЁ ВПЕРЕДИ'}</small><h2>{chosen.title}</h2><p>{chosen.description}</p>{chosen.requires&&<p className="muted">Продолжение: {active.find(a=>a.id===chosen.requires)?.title}. Можно отметить независимо.</p>}<button className={'primary '+(completed[chosen.id]?'completed':'')} disabled={busy} onClick={()=>void(personal?app.toggleCustom(chosen.id):app.toggle(chosen.id))}>{completed[chosen.id]?'Снять отметку':'Это было! ✓'}</button>
+ <label>Личная заметка<textarea maxLength={4000} value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Когда это было? Что хочется запомнить?"/></label><div className="card-actions"><button disabled={busy||draft===(data.notes[chosen.id]||'')} onClick={async()=>{if(await app.saveNote(chosen.id,draft))setNotice('Заметка сохранена');}}>Сохранить заметку</button>{!personal&&<button onClick={()=>{const url='https://t.me/share/url?url='+encodeURIComponent(achievementLink(chosen.id))+'&text='+encodeURIComponent(chosen.title);const tg=getTelegramWebApp();if(tg?.openTelegramLink)tg.openTelegramLink(url);else window.open(url,'_blank','noopener,noreferrer');}}>Отправить другу ↗</button>}{personal&&<button className="danger" disabled={busy} onClick={async()=>{if(window.confirm('Удалить личную ачивку?')&&await app.removeCustom(chosen.id))setSelected(null);}}>Удалить</button>}</div></article>}
+ </section>}
+ <footer><span>Собирай истории, а не баллы.</span>{data.admin&&!admin&&<button onClick={()=>{if(leave())setAdmin(true);}}>Мастерская</button>}</footer>
+ </main>;
 }

@@ -1,4 +1,6 @@
 export interface TelegramWebApp {
+  BackButton?: { show: () => void; hide: () => void; onClick: (cb: () => void) => void; offClick: (cb: () => void) => void };
+  openTelegramLink?: (url: string) => void;
   initData: string;
   initDataUnsafe: Record<string, unknown>;
   ready: () => void;
