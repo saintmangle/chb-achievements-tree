@@ -6,7 +6,7 @@ export const treeAreas = [
   [74,12,39,17],[85,22,23,10],[84,33,23,10],[84,43,28,11],[85,53,23,9],[81,62,27,9],[79,73,34,13],[50,91,65,13],
 ];
 const colors = [[92,161,94],[113,156,75],[76,159,122],[151,170,76],[102,156,130],[72,155,147],[113,172,102],[76,147,102],[136,171,96],[95,163,146],[152,168,84],[90,145,78],[121,165,123],[145,178,93]];
-export function TreeHome({ branches, selected, ratios, onSelect, onOpen }: { branches: CatalogBranch[]; selected: number | null; ratios: Record<number, number>; onSelect: (id: number) => void; onOpen: (id: number) => void }) {
+export function TreeHome({ branches, selected, ratios, onSelect, onOpen }: { branches: CatalogBranch[]; selected: number | null; ratios: Record<number, number>; onSelect: (id: number | null) => void; onOpen: (id: number) => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const original = useRef<ImageData | null>(null);
   const regions = useRef<Int8Array | null>(null);
@@ -55,7 +55,7 @@ export function TreeHome({ branches, selected, ratios, onSelect, onOpen }: { bra
   useEffect(()=>{paint();},[ratios,selected]);
   const branch=branches.find(b=>b.id===selected&&b.active!==false);
   const area=branch?treeAreas[branch.id-1]:null;
-  return <TreeViewport selection={branch&&area?{x:area[0]*8,y:area[1]*10,title:branch.title.replace(/^ветка\s*/i,'').replace(/\s*\([^)]*\)/g,''),onOpen:()=>onOpen(branch.id)}:undefined}>
+  return <TreeViewport selection={branch&&area?{x:area[0]*8,y:area[1]*10,title:branch.title.replace(/^ветка\s*/i,'').replace(/\s*\([^)]*\)/g,''),onOpen:()=>onOpen(branch.id),onDismiss:()=>onSelect(null)}:undefined}>
     <canvas ref={canvas} width={800} height={1000} role="img" aria-label="Твоё дерево достижений: листва окрашивается по мере выполнения" />
     {branches.filter(b=>b.id<=15&&b.active!==false).map(b=>{const p=treeAreas[b.id-1];if(!p)return null;return <button key={b.id} className={'tree-hit '+(selected===b.id?'selected':'')} style={{left:p[0]+'%',top:p[1]+'%',width:p[2]+'%',height:p[3]+'%'}} aria-label={b.title} aria-pressed={selected===b.id} onClick={()=>selected===b.id?onOpen(b.id):onSelect(b.id)}></button>})}
   </TreeViewport>;

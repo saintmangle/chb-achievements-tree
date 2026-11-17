@@ -1,8 +1,8 @@
 type Point = {x:number;y:number};
 // Route outside the padded text bounds, with no reversal under the caption.
-export function connectorPath(anchor:Point,center:Point,size:{width:number;height:number}) {
- const left=center.x-size.width/2-10,right=center.x+size.width/2+10;
- const top=center.y-size.height/2-10,bottom=center.y+size.height/2+10;
+export function connectorPath(anchor:Point,center:Point,size:{width:number;height:number},gap=10) {
+ const left=center.x-size.width/2-gap,right=center.x+size.width/2+gap;
+ const top=center.y-size.height/2-gap,bottom=center.y+size.height/2+gap;
  if(anchor.x>=left&&anchor.x<=right&&anchor.y>=top&&anchor.y<=bottom)return '';
  if(anchor.x<left||anchor.x>right){
   const endX=anchor.x<left?left:right,midX=(anchor.x+endX)/2;

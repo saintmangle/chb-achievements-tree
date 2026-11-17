@@ -15,3 +15,11 @@ test('connector avoids text for wide and multiline titles across all anchor dire
   }
  }
 });
+test('fixed square connector ends exactly on button border',()=>{
+ const center={x:160,y:220},size={width:48,height:48};
+ assert.equal(output.connectorPath({x:20,y:220},center,size,0),'M 20 220 H 136');
+ assert.equal(output.connectorPath({x:300,y:220},center,size,0),'M 300 220 H 184');
+ assert.equal(output.connectorPath({x:160,y:20},center,size,0),'M 160 20 V 196');
+ assert.equal(output.connectorPath({x:160,y:400},center,size,0),'M 160 400 V 244');
+ assert.equal(output.connectorPath(center,center,size,0),'');
+});
