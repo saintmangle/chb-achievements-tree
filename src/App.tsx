@@ -11,6 +11,8 @@ export default function App() {
  const auth=useTelegramAuth(), app=useAppData(auth.identity?.telegramUserId??null);
  const {data,busy}=app;
  const [branch,setBranch]=useState<number|null>(null),[cloud,setCloud]=useState<number|null>(null),[selected,setSelected]=useState<string|null>(null),[admin,setAdmin]=useState(false),[draft,setDraft]=useState(''),[customText,setCustomText]=useState(''),[notice,setNotice]=useState('');
+ const savingCard=useRef(false);
+ const [saving,setSaving]=useState(false);
  const linked=useRef(false), card=useRef<HTMLElement>(null);
  useEffect(()=>{if(selected)card.current?.scrollIntoView({block:"nearest"});},[selected]);
  const branches=data.branches.filter(b=>b.active!==false), active=data.achievements.filter(a=>a.active!==false);
@@ -31,7 +33,7 @@ export default function App() {
  {isDemo&&<div className="demo">Демо · данные хранятся только в этом браузере</div>}
  <header><span className="brand">CHB</span><span className="counter">{active.filter(a=>data.progress[a.id]).length} / {active.length}</span></header>
  {app.error&&<div className="error" role="alert">{app.error}<button onClick={()=>{app.setError('');void app.reload().catch(e=>app.setError(e.message));}}>Повторить загрузку</button></div>}
- {notice&&<p className="notice" role="status">{notice}</p>}
+ {notice&&!chosen&&<p className="notice" role="status">{notice}</p>}
  {admin?<AdminPanel achievements={data.achievements} branches={data.branches} busy={busy} onSave={app.saveCatalog} onClose={()=>setAdmin(false)}/>:branch===null?<>
  <TreeHome branches={branches} selected={cloud} ratios={ratios} onSelect={setCloud} onOpen={open}/>
 
@@ -42,7 +44,12 @@ export default function App() {
  <AchievementGraph items={items} title={current?.title||'Мои достижения'} selected={selected} completed={completed} onSelect={id=>{if(leave())setSelected(id);}}/>
  {personal&&<form className="custom-form" onSubmit={async e=>{e.preventDefault();if(await app.addCustom(customText))setCustomText('');}}><label>Своя ачивка · {data.custom.length}/67<input maxLength={280} required value={customText} onChange={e=>setCustomText(e.target.value)} placeholder="Что хочется однажды отметить?"/></label><button className="primary" disabled={busy||data.custom.length>=67||!customText.trim()}>Добавить</button></form>}
  {chosen&&<article ref={card} className="achievement-card" key={chosen.id}><button className="close" aria-label="Закрыть достижение" onClick={leave}>×</button><small>{completed[chosen.id]?'✓ ВЫПОЛНЕНО':'ЕЩЁ ВПЕРЕДИ'}</small><h2>{chosen.title}</h2><p>{chosen.description}</p>{chosen.requires&&<p className="muted">Продолжение: {active.find(a=>a.id===chosen.requires)?.title}</p>}<button className={'primary '+(completed[chosen.id]?'completed':'')} disabled={busy} onClick={()=>void(personal?app.toggleCustom(chosen.id):app.toggle(chosen.id))}>{completed[chosen.id]?'Снять отметку':'Выполнено'}</button>
- <label>Личная заметка<textarea maxLength={4000} value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Когда это было? Что хочется запомнить?"/></label><div className="card-actions"><button disabled={busy||draft===(data.notes[chosen.id]||'')} onClick={async()=>{if(await app.saveNote(chosen.id,draft))setNotice('Заметка сохранена');}}>Сохранить заметку</button>{!personal&&<button disabled={busy} onClick={async()=>{try{const result=await shareCard(chosen.title,chosen.description);if(result==='downloaded')setNotice('Карточка сохранена. Прикрепи её в чате другу.');}catch(e){if((e as Error).name!=='AbortError')setNotice('Не удалось отправить картинку. Попробуй ещё раз.');}}}>Поделиться картинкой</button>}{personal&&<button className="danger" disabled={busy} onClick={async()=>{if(window.confirm('Удалить личную ачивку?')&&await app.removeCustom(chosen.id))setSelected(null);}}>Удалить</button>}</div></article>}
+ <label>Личная заметка<textarea maxLength={4000} value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Когда это было? Что хочется запомнить?"/></label><div className="card-actions"><button disabled={busy||draft===(data.notes[chosen.id]||'')} onClick={async()=>{if(await app.saveNote(chosen.id,draft))setNotice('Заметка сохранена');}}>Сохранить заметку</button>{!personal&&<button disabled={busy||saving} onClick={async()=>{
+ if(savingCard.current)return;savingCard.current=true;setSaving(true);setNotice('');
+ try{await shareCard(chosen.title,chosen.description);setNotice('Сохранено в чат');}
+ catch(e){setNotice(e instanceof Error?e.message:'Не удалось сохранить ачивку.');}
+ finally{savingCard.current=false;setSaving(false);}
+}}>{saving?'Сохраняем…':'Сохранить ачивку'}</button>}{personal&&<button className="danger" disabled={busy} onClick={async()=>{if(window.confirm('Удалить личную ачивку?')&&await app.removeCustom(chosen.id))setSelected(null);}}>Удалить</button>}</div>{notice&&<p className="notice" role="status">{notice}</p>}</article>}
  </section>}
  {data.admin&&!admin&&<footer><button onClick={()=>{if(leave())setAdmin(true);}}>Мастерская</button></footer>}
  </main>;
