@@ -44,3 +44,5 @@ h1{font-size:18px;line-height:1.7}h2,.toolbar h2{font-size:14px;line-height:1.7}
 .tree-static-stage canvas{display:block;width:100%;height:100%}
 .tree-static-stage .tree-hit,.tree-static-stage .tree-hit:hover,.tree-static-stage .tree-hit.selected{background:transparent!important;border:0!important;box-shadow:none;padding:0;touch-action:auto}
 .home-actions .personal-home{grid-column:1/-1}
+
+.note-editor{margin:14px 0}.note-editor summary{cursor:pointer;padding:12px;border:3px solid;border-color:#aaa #333 #333 #aaa;background:#626262;color:#eee;font-size:12px;line-height:1.6}.note-editor summary:hover{background:#707070}.note-editor summary:focus-visible{outline:3px solid #ccdc91;outline-offset:3px}.note-editor[open] summary{margin-bottom:10px}
