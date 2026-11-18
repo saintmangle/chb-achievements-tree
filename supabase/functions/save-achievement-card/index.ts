@@ -17,7 +17,8 @@ Deno.serve(async(req)=>{
   const reader=req.body?.getReader();if(!reader)return reply({ok:false},400);
   const chunks:Uint8Array[]=[];let length=0;
   while(true){const {value,done}=await reader.read();if(done)break;length+=value.length;if(length>5_000_000){await reader.cancel();return reply({ok:false},413);}chunks.push(value);}
-  const form=await new Response(new Blob(chunks),{headers:{'content-type':req.headers.get('content-type')||''}}).formData();
+  const body=new Uint8Array(length);let offset=0;for(const chunk of chunks){body.set(chunk,offset);offset+=chunk.length;}
+  const form=await new Response(body,{headers:{'content-type':req.headers.get('content-type')||''}}).formData();
   const photo=form.get('photo');
   if(!(photo instanceof File)||photo.type!=='image/png'||photo.size<24||photo.size>4_000_000)return reply({ok:false},400);
   const bytes=new Uint8Array(await photo.arrayBuffer());

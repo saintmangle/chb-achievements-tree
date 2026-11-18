@@ -33,7 +33,7 @@ export default function App() {
  {isDemo&&<div className="demo">Демо · данные хранятся только в этом браузере</div>}
  <header><span className="brand">CHB</span><span className="counter">{active.filter(a=>data.progress[a.id]).length} / {active.length}</span></header>
  {app.error&&<div className="error" role="alert">{app.error}<button onClick={()=>{app.setError('');void app.reload().catch(e=>app.setError(e.message));}}>Повторить загрузку</button></div>}
- {notice&&<p className="notice" role="status">{notice}</p>}
+ {notice&&!chosen&&<p className="notice" role="status">{notice}</p>}
  {admin?<AdminPanel achievements={data.achievements} branches={data.branches} busy={busy} onSave={app.saveCatalog} onClose={()=>setAdmin(false)}/>:branch===null?<>
  <TreeHome branches={branches} selected={cloud} ratios={ratios} onSelect={setCloud} onOpen={open}/>
 
@@ -49,7 +49,7 @@ export default function App() {
  try{await shareCard(chosen.title,chosen.description);setNotice('Сохранено в чат');}
  catch(e){setNotice(e instanceof Error?e.message:'Не удалось сохранить ачивку.');}
  finally{savingCard.current=false;setSaving(false);}
-}}>{saving?'Сохраняем…':'Сохранить ачивку'}</button>}{personal&&<button className="danger" disabled={busy} onClick={async()=>{if(window.confirm('Удалить личную ачивку?')&&await app.removeCustom(chosen.id))setSelected(null);}}>Удалить</button>}</div></article>}
+}}>{saving?'Сохраняем…':'Сохранить ачивку'}</button>}{personal&&<button className="danger" disabled={busy} onClick={async()=>{if(window.confirm('Удалить личную ачивку?')&&await app.removeCustom(chosen.id))setSelected(null);}}>Удалить</button>}</div>{notice&&<p className="notice" role="status">{notice}</p>}</article>}
  </section>}
  {data.admin&&!admin&&<footer><button onClick={()=>{if(leave())setAdmin(true);}}>Мастерская</button></footer>}
  </main>;
