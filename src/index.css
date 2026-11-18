@@ -46,3 +46,5 @@ h1{font-size:18px;line-height:1.7}h2,.toolbar h2{font-size:14px;line-height:1.7}
 .home-actions .personal-home{grid-column:1/-1}
 
 .note-editor{margin:14px 0}.note-editor summary{cursor:pointer;padding:12px;border:3px solid;border-color:#aaa #333 #333 #aaa;background:#626262;color:#eee;font-size:12px;line-height:1.6}.note-editor summary:hover{background:#707070}.note-editor summary:focus-visible{outline:3px solid #ccdc91;outline-offset:3px}.note-editor[open] summary{margin-bottom:10px}
+
+.achievement-card .save-achievement,.note-editor summary{display:block;width:100%;min-height:50px;padding:12px;border:3px solid;border-color:#aaa #333 #333 #aaa;border-radius:0;background:#626262;color:#eee;font-size:12px;font-weight:400;line-height:1.6;text-align:center;box-shadow:none}.note-editor summary{list-style:none}.note-editor summary::-webkit-details-marker{display:none}.achievement-card .save-achievement:hover{background:#707070}
